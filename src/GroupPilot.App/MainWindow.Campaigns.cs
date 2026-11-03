@@ -9,8 +9,6 @@ namespace GroupPilot_App;
 
 public sealed partial class MainWindow
 {
-    private Campaign? activeCampaign;
-
     private void ShowCampaigns()
     {
         var page = Page("Campaigns", "Save a plan and resume pending or failed targets. Schedule times are local planning metadata.");
@@ -77,12 +75,12 @@ public sealed partial class MainWindow
 
     private void ShowCampaignDetails(Campaign campaign)
     {
-        activeCampaign = campaign;
         var post = model.Posts.Single(item => item.Id == campaign.PostId);
         var page = Page(campaign.Name, $"{post.Title} · {campaign.Targets.Count} targets");
         if (campaign.ScheduledFor is { } scheduled)
             page.Children.Add(Label($"Planned for {scheduled.ToLocalTime():f}"));
-        var targets = List(campaign.Targets);
+        var targets = List(campaign.Targets.OrderBy(target => target.Id));
+        targets.SelectedItem = campaign.Targets.FirstOrDefault(target => target.Status == TargetStatus.InProgress);
         var targetSection = Section(page, "Publishing targets");
         targetSection.Children.Add(targets);
         var actions = ResponsiveGrid(targetSection, 3, 180);
@@ -90,36 +88,46 @@ public sealed partial class MainWindow
 
         Action(actions, "Resume next target", async () =>
         {
-            var next = campaign.Targets.FirstOrDefault(CanPublish)
-                ?? throw new ArgumentException("All targets are closed or unavailable.");
-            await AssistAsync(post, next);
+            var next = campaign.Targets.Where(CanPublish)
+                .OrderByDescending(target => target.Status == TargetStatus.InProgress).ThenBy(target => target.Id)
+                .FirstOrDefault() ?? throw new ArgumentException("No actionable targets. Record outcomes for targets awaiting approval.");
+            await AssistAsync(campaign.Id, post, next);
         }, primary: true);
-        Action(actions, "Prepare selected target", () => AssistAsync(post, Selected()));
+        Action(actions, "Prepare selected target", () => AssistAsync(campaign.Id, post, Selected()));
         Action(actions, "Record selected outcome", () => RecordOutcomeAsync(campaign, Selected()));
         Action(page, "Back to campaigns", () =>
         {
-            activeCampaign = null;
             ShowCampaigns();
             return Task.CompletedTask;
         });
     }
 
-    private bool CanPublish(CampaignGroup target) => target.Status is TargetStatus.Pending or TargetStatus.Failed
-        && model.Groups.Any(group => group.Id == target.SocialGroupId && group.Enabled);
+    private bool CanPublish(CampaignGroup target) =>
+        target.Status is TargetStatus.Pending or TargetStatus.Failed or TargetStatus.InProgress &&
+        model.Groups.Any(group => group.Id == target.SocialGroupId && group.Enabled
+            && group.Url == target.GroupUrl && group.PostingAccess != GroupPostingAccess.Unavailable);
 
-    private async Task AssistAsync(Post post, CampaignGroup target)
+    private async Task AssistAsync(int campaignId, Post post, CampaignGroup target)
     {
         if (!CanPublish(target))
-            throw new ArgumentException("This target is closed or its group is unavailable.");
+            throw new ArgumentException("This target is closed, awaiting approval, or its group is unavailable or changed.");
         var group = model.Groups.Single(item => item.Id == target.SocialGroupId);
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(Label("GroupPilot copies the draft text and opens the group. Paste the draft, attach images and confirm the submission in Facebook."));
+        if (target.Status == TargetStatus.InProgress)
+        {
+            panel.Children.Add(Label("This target was left in progress. Check Facebook for an existing submission before posting again. If it was already submitted, record its outcome."));
+        }
+        panel.Children.Add(Label("Check your account, the group rules and permission to post in Facebook. Paste the copied draft or link and submit manually."));
+        panel.Children.Add(Label(group.ReviewedAt is { } reviewed
+            ? $"Last manual review: {group.PostingAccess} · {reviewed.ToLocalTime():g}"
+            : "Posting access has not been reviewed."));
         if (group.Rules.Length > 0)
             panel.Children.Add(Label($"Group rules: {group.Rules}"));
         if (post.Media.Count > 0)
             panel.Children.Add(Label("Local images to attach:\n" + string.Join("\n", post.Media.Select(media => media.Path))));
         var variant = Choices("Text to copy", new[] { "Main draft" }.Concat(post.Variants.Select(item => item.Body)), "Main draft");
-        panel.Children.Add(variant);
+        if (post.Kind != PostKind.Existing)
+            panel.Children.Add(variant);
         if (await Dialog($"Prepare for {target.GroupName}", new ScrollViewer { Content = panel, MaxHeight = 400 }, "Copy and open").ShowAsync()
             != ContentDialogResult.Primary)
             return;
@@ -133,17 +141,23 @@ public sealed partial class MainWindow
             data.SetText(text);
             Clipboard.SetContent(data);
         }
-        await OpenFacebookAsync(target.GroupUrl);
+        await storage.BeginTargetAsync(target.Id);
+        await model.ReloadAsync();
+        ShowCampaignDetails(model.Campaigns.Single(item => item.Id == campaignId));
+        await OpenFacebookAsync(target.GroupUrl, group, (campaignId, target.Id));
     }
 
-    private async Task RecordOutcomeAsync(Campaign campaign, CampaignGroup target)
+    private async Task RecordOutcomeAsync(Campaign campaign, CampaignGroup target, string suggestedUrl = "")
     {
         if (target.Status is TargetStatus.Published or TargetStatus.Skipped)
             throw new ArgumentException("This target is already closed.");
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(Label("Choose Published only after confirming the post in Facebook."));
-        var outcome = Choices("Outcome", new[] { TargetStatus.Published, TargetStatus.Failed, TargetStatus.Skipped }, TargetStatus.Published);
-        var url = Input("Published Facebook URL");
+        var outcome = Choices("Outcome", new[]
+        {
+            TargetStatus.Published, TargetStatus.AwaitingApproval, TargetStatus.Failed, TargetStatus.Skipped
+        }, TargetStatus.Pending);
+        var url = Input("Published Facebook URL", suggestedUrl);
         var error = Label("");
         panel.Children.Add(outcome);
         panel.Children.Add(url);
@@ -151,12 +165,25 @@ public sealed partial class MainWindow
         var dialog = Dialog("Record publishing outcome", panel, "Record");
         dialog.PrimaryButtonClick += (_, args) =>
         {
-            args.Cancel = Equals(outcome.SelectedItem, TargetStatus.Published) && !Validation.IsFacebookPostUrl(url.Text.Trim());
-            error.Text = args.Cancel ? "Enter the HTTPS Facebook URL of the published post." : "";
+            if (outcome.SelectedItem is null)
+                error.Text = "Choose the outcome you observed in Facebook.";
+            else if (Equals(outcome.SelectedItem, TargetStatus.Published) && !Validation.IsFacebookPostUrl(url.Text.Trim()))
+                error.Text = "Enter the HTTPS Facebook URL of the published post.";
+            else
+                error.Text = "";
+            args.Cancel = error.Text.Length > 0;
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             return;
         await storage.RecordAttemptAsync(target.Id, (TargetStatus)outcome.SelectedItem, url.Text.Trim());
+        if (publishingTarget?.TargetId == target.Id)
+        {
+            publishingTarget = null;
+            if (outcomeButton is not null)
+                outcomeButton.IsEnabled = false;
+            if (browserContext is not null)
+                browserContext.Text = "Campaign outcome recorded.";
+        }
         await model.ReloadAsync();
         var refreshed = model.Campaigns.Single(item => item.Id == campaign.Id);
         ShowCampaignDetails(refreshed);

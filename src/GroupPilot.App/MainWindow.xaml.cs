@@ -14,7 +14,6 @@ public sealed partial class MainWindow : Window
     private readonly PilotViewModel model;
     private bool initialized;
     private Post? editingPost;
-    private WebView2? browser;
 
     public MainWindow(Storage storage, PilotViewModel model)
     {
@@ -33,6 +32,7 @@ public sealed partial class MainWindow : Window
             Navigation.IsEnabled = initialized && !model.Busy;
         };
         Root.Loaded += Initialize;
+        Closed += (_, _) => facebookWindow?.Close();
     }
 
     private async void Initialize(object sender, RoutedEventArgs args)

@@ -1,6 +1,6 @@
 # GroupPilot
 
-**Versiune curentă** `0.00.03`
+**Versiune curentă** `0.00.04`
 
 GroupPilot este o aplicație desktop nativă pentru Windows 11. Pregătești postări, organizezi grupuri Facebook și urmărești local campaniile de distribuire. Trimiterea finală se face manual în interfața Facebook, pentru fiecare grup.
 
@@ -33,6 +33,15 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 
 - [x] Pagini de lucru aliniate la stânga, formulare grupate și coloane care se rearanjează la redimensionare. Identitatea vizuală folosește iconul F în fereastră și în resursele Windows.
 
+## Flux Facebook
+
+1. Din **Facebook Browser**, apasă **Open Facebook window**. Alege **Continue with this session** dacă ești deja autentificat în profilul GroupPilot sau autentifică-te direct în Facebook. **Open in default browser** folosește sesiunea browserului Windows, dacă există. Pentru a importa de acolo, deschide linkul postării în fereastra GroupPilot.
+2. Deschide permalinkul unei postări și apasă **Import current post**. Verifică URL-ul, titlul și descrierea disponibilă, apoi salvează draftul.
+3. În **Groups**, selectează un grup și apasă **Review in Facebook**. Verifică regulile și dreptul contului de a posta, apoi folosește **Record group review** pentru a salva observațiile și data verificării. Accesul poate varia în funcție de cont și în timp.
+4. Din campanie, alege **Prepare selected target** sau **Resume next target**. GroupPilot copiază textul ori linkul și salvează ținta ca fiind în lucru. Lipește conținutul, atașează imaginile și confirmă manual trimiterea în Facebook.
+5. Folosește **Record campaign outcome** în fereastra Facebook sau **Record selected outcome** în campanie. Selectează rezultatul observat. Pentru Published, confirmă URL-ul postării. Pentru AwaitingApproval, verifică ulterior moderarea înainte de a înregistra rezultatul final.
+6. După o întrerupere, redeschide campania. Țintele rămase în lucru au prioritate la reluare. Verifică întâi dacă postarea a fost deja trimisă, apoi înregistrează rezultatul sau continuă publicarea.
+
 ## Ce urmează
 
 - [ ] Verifică interactiv cele opt pagini, redimensionarea, temele și dialogurile native pe Windows 11.
@@ -40,6 +49,13 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [ ] Verifică afișarea notificării Windows și lansarea pe x86 și ARM64.
 
 ## Istoricul versiunilor
+
+### 0.00.04
+
+- [x] Fereastră Facebook dedicată, profil WebView2 persistent și opțiune de deschidere în browserul implicit.
+- [x] Import de permalink, titlu și descriere disponibilă, cu verificarea paginii înainte de transfer.
+- [x] Verificare manuală a regulilor și accesului pentru fiecare grup, cu dată de verificare în SQLite.
+- [x] Recuperare după întrerupere, stare de moderare și înregistrarea rezultatului din contextul țintei.
 
 ### 0.00.03
 
@@ -58,4 +74,4 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [x] Documentate fundația WinUI 3 inițială, pașii de build și lansare și etapele MVP.
 - [x] Stabilită versiunea de bază `0.00.01`.
 
-La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.03` corespunde metadatelor .NET `0.0.3` și MSIX `0.0.3.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.
+La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.04` corespunde metadatelor .NET `0.0.4` și MSIX `0.0.4.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.

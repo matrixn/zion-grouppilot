@@ -21,6 +21,27 @@ public static class Validation
             "story.php" or "permalink.php" or "photo" or "photo.php" or "watch");
     }
 
+    public static bool IsFacebookLoginPage(string value)
+    {
+        if (!IsFacebookUrl(value))
+            return false;
+
+        var first = new Uri(value).AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        return first is "login" or "login.php" or "checkpoint" or "recover" or "two_step_verification";
+    }
+
+    public static bool IsSameFacebookGroup(string expected, string actual)
+    {
+        try
+        {
+            return GroupUrl(expected) == GroupUrl(actual);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
     public static string GroupUrl(string value)
     {
         if (!IsFacebookUrl(value))

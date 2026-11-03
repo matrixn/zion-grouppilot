@@ -64,6 +64,59 @@ public sealed class StorageTests : IDisposable
         });
     }
 
+    [Fact]
+    public async Task ReviewAndInterruptedTargetSurviveReopenAndModeration()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/test/" };
+        await storage.SaveGroupAsync(group, "");
+        await storage.SaveGroupReviewAsync(group.Id, group.Url, GroupPostingAccess.RequiresApproval, "Review before posting");
+        var post = new Post { Title = "Draft", Kind = PostKind.New, Body = "Test" };
+        await storage.SavePostAsync(post);
+        await storage.SaveCampaignAsync("Campaign", post.Id, [group.Id], null);
+        var target = await storage.QueryAsync(db => db.Targets.SingleAsync());
+        await storage.BeginTargetAsync(target.Id);
+
+        storage = Open();
+        await storage.InitializeAsync();
+        var reviewed = await storage.QueryAsync(db => db.Groups.SingleAsync());
+        Assert.Equal(GroupPostingAccess.RequiresApproval, reviewed.PostingAccess);
+        Assert.Equal("Review before posting", reviewed.Rules);
+        Assert.NotNull(reviewed.ReviewedAt);
+        Assert.Equal(TargetStatus.InProgress, await storage.QueryAsync(db => db.Targets.Select(item => item.Status).SingleAsync()));
+        Assert.Empty(await storage.QueryAsync(db => db.Attempts.ToListAsync()));
+
+        await storage.RecordAttemptAsync(target.Id, TargetStatus.AwaitingApproval, "");
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.BeginTargetAsync(target.Id));
+        await storage.RecordAttemptAsync(target.Id, TargetStatus.Published, "https://www.facebook.com/groups/test/posts/42/");
+        Assert.Equal([TargetStatus.AwaitingApproval, TargetStatus.Published],
+            await storage.QueryAsync(db => db.Attempts.OrderBy(item => item.Id).Select(item => item.Status).ToListAsync()));
+    }
+
+    [Fact]
+    public async Task ChangingGroupUrlClearsReviewAndPreventsOpeningOldTarget()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/test/" };
+        await storage.SaveGroupAsync(group, "");
+        var oldUrl = group.Url;
+        await storage.SaveGroupReviewAsync(group.Id, oldUrl, GroupPostingAccess.Allowed, "Rules");
+        var post = new Post { Title = "Draft", Kind = PostKind.New, Body = "Test" };
+        await storage.SavePostAsync(post);
+        await storage.SaveCampaignAsync("Campaign", post.Id, [group.Id], null);
+        var target = await storage.QueryAsync(db => db.Targets.SingleAsync());
+
+        group.Url = "https://facebook.com/groups/other/";
+        await storage.SaveGroupAsync(group, "");
+        var updated = await storage.QueryAsync(db => db.Groups.SingleAsync());
+        Assert.Equal(GroupPostingAccess.Unreviewed, updated.PostingAccess);
+        Assert.Null(updated.ReviewedAt);
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.SaveGroupReviewAsync(group.Id, oldUrl, GroupPostingAccess.Allowed, ""));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.BeginTargetAsync(target.Id));
+    }
+
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
     private sealed class Factory(DbContextOptions<PilotDb> options) : IDbContextFactory<PilotDb>

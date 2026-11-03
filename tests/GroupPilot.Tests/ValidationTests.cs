@@ -18,6 +18,20 @@ public sealed class ValidationTests
             Validation.GroupUrl("https://m.facebook.com/groups/Example/posts/123/?ref=share"));
     }
 
+    [Theory]
+    [InlineData("https://m.facebook.com/groups/Test/posts/42/", true)]
+    [InlineData("https://www.facebook.com/groups/testing/", false)]
+    [InlineData("https://www.facebook.com/login/?next=https://www.facebook.com/groups/test/", false)]
+    public void GroupReviewUsesCurrentGroup(string url, bool same) =>
+        Assert.Equal(same, Validation.IsSameFacebookGroup("https://www.facebook.com/groups/test/", url));
+
+    [Theory]
+    [InlineData("https://www.facebook.com/login.php", true)]
+    [InlineData("https://www.facebook.com/checkpoint/", true)]
+    [InlineData("https://www.facebook.com/groups/test/", false)]
+    public void DetectsSignInRoutes(string url, bool login) =>
+        Assert.Equal(login, Validation.IsFacebookLoginPage(url));
+
     [Fact]
     public void RequiresDraftContentAndFacebookSource()
     {

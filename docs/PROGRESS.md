@@ -1,5 +1,14 @@
 # Progres GroupPilot
 
+## 0.00.04 · Facebook Integration & Workflow Validation
+
+- [x] Fereastră WebView2 separată, cu profil reutilizat și opțiune pentru browserul implicit.
+- [x] Import de postări pe baza permalinkului și a metadatelor disponibile în documentul deschis.
+- [x] Verificare manuală a grupurilor cu reguli, acces și dată. Modificarea URL-ului invalidează verificarea.
+- [x] Ținte persistente în lucru, reluare după redeschidere și rezultat separat pentru moderare.
+- [x] Build x64 și 16 teste xUnit. Verificate lansarea ferestrei dedicate, inițializarea WebView2 și încărcarea paginii Facebook printr-o probă de pornire.
+- [ ] Confirmare interactivă cu un cont Facebook și un grup de test autorizat, inclusiv importul unui permalink real și publicarea manuală. Helperul Windows nu a putut accesa fereastra.
+
 ## 0.00.03 · Layout și identitate vizuală
 
 - [x] Layout comun aliniat la stânga, cu Dashboard pe carduri, secțiuni de formular și grile care se reașază la redimensionare.

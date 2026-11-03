@@ -233,6 +233,12 @@ namespace GroupPilot.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("PostingAccess")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("ReviewedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Rules")
                         .IsRequired()
                         .HasColumnType("TEXT");

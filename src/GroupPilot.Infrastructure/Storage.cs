@@ -58,6 +58,9 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
 
             var existing = group.Id == 0 ? db.Groups.Add(group).Entity : await db.Groups.FindAsync(group.Id)
                 ?? throw new InvalidOperationException("The group was deleted.");
+            var sameUrl = existing.Url == group.Url;
+            group.PostingAccess = sameUrl ? existing.PostingAccess : GroupPostingAccess.Unreviewed;
+            group.ReviewedAt = sameUrl ? existing.ReviewedAt : null;
             db.Entry(existing).CurrentValues.SetValues(group);
             existing.Category = category.Length == 0 ? null :
                 await db.Categories.SingleOrDefaultAsync(item => item.Name == category)
@@ -136,9 +139,39 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         });
     }
 
+    public Task SaveGroupReviewAsync(int groupId, string reviewedUrl, GroupPostingAccess access, string rules)
+    {
+        if (access is not (GroupPostingAccess.Allowed or GroupPostingAccess.RequiresApproval or GroupPostingAccess.Unavailable))
+            throw new ArgumentException("Choose the posting access you observed.");
+
+        return SaveAsync(async db =>
+        {
+            var reviewedAt = DateTimeOffset.UtcNow;
+            var updated = await db.Groups.Where(group => group.Id == groupId && group.Url == reviewedUrl)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(group => group.PostingAccess, access)
+                    .SetProperty(group => group.ReviewedAt, reviewedAt)
+                    .SetProperty(group => group.Rules, rules.Trim()));
+            if (updated != 1)
+                throw new ArgumentException("The group changed. Open its current link and review it again.");
+        });
+    }
+
+    public Task BeginTargetAsync(int targetId) => SaveAsync(async db =>
+    {
+        var target = await db.Targets.FindAsync(targetId) ?? throw new ArgumentException("Target unavailable.");
+        if (target.Status is TargetStatus.Published or TargetStatus.Skipped or TargetStatus.AwaitingApproval)
+            throw new ArgumentException("This target is closed or awaiting approval.");
+        var group = await db.Groups.FindAsync(target.SocialGroupId);
+        if (group is null || !group.Enabled || group.Url != target.GroupUrl || group.PostingAccess == GroupPostingAccess.Unavailable)
+            throw new ArgumentException("This group is unavailable or its saved URL changed.");
+
+        target.Status = TargetStatus.InProgress;
+    });
+
     public Task RecordAttemptAsync(int targetId, TargetStatus status, string publishedUrl)
     {
-        if (status == TargetStatus.Pending || (status == TargetStatus.Published && !Validation.IsFacebookPostUrl(publishedUrl)))
+        if (status is not (TargetStatus.Published or TargetStatus.Failed or TargetStatus.Skipped or TargetStatus.AwaitingApproval) || (status == TargetStatus.Published && !Validation.IsFacebookPostUrl(publishedUrl)))
             throw new ArgumentException("Choose an outcome and enter the Facebook post URL for a successful publication.");
 
         return SaveAsync(async db =>

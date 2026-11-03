@@ -35,7 +35,11 @@ public sealed partial class MainWindow
         var actions = ResponsiveGrid(directory, 4, 160);
         Action(actions, "Add group", () => EditGroupAsync(null), primary: true);
         Action(actions, "Edit selected group", () => EditGroupAsync(Selected()));
-        Action(actions, "Open selected group", () => OpenFacebookAsync(Selected().Url));
+        Action(actions, "Review in Facebook", () =>
+        {
+            var group = Selected();
+            return OpenFacebookAsync(group.Url, group: group);
+        });
         Action(actions, "Delete selected group", async () =>
         {
             var group = Selected();

@@ -1,7 +1,8 @@
 namespace GroupPilot.Core;
 
 public enum PostKind { Existing, New, Remix }
-public enum TargetStatus { Pending, Published, Failed, Skipped }
+public enum TargetStatus { Pending, Published, Failed, Skipped, InProgress, AwaitingApproval }
+public enum GroupPostingAccess { Unreviewed, Allowed, RequiresApproval, Unavailable }
 
 public sealed class SocialAccount
 {
@@ -25,7 +26,12 @@ public sealed class SocialGroup
     public string Notes { get; set; } = "";
     public string Rules { get; set; } = "";
     public bool Enabled { get; set; } = true;
-    public override string ToString() => Category is null ? Name : $"{Name} · {Category.Name}";
+    public GroupPostingAccess PostingAccess { get; set; }
+    public DateTimeOffset? ReviewedAt { get; set; }
+
+    public override string ToString() =>
+        $"{Name}{(Category is null ? "" : $" · {Category.Name}")} · {PostingAccess}";
+
 }
 
 public sealed class Post
