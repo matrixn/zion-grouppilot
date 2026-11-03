@@ -1,5 +1,10 @@
 # Progres GroupPilot
 
+## 0.00.05 · Import de grupuri
+
+- [x] Previzualizare și import din pagina de grupuri încărcată în WebView2, cu validarea linkurilor și deduplicare în SQLite.
+- [ ] Verificare cu lista reală a unui cont Facebook autentificat.
+
 ## 0.00.04 · Facebook Integration & Workflow Validation
 
 - [x] Fereastră WebView2 separată, cu profil reutilizat și opțiune pentru browserul implicit.

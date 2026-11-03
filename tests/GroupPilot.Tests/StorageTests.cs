@@ -117,6 +117,29 @@ public sealed class StorageTests : IDisposable
         await Assert.ThrowsAsync<ArgumentException>(() => storage.BeginTargetAsync(target.Id));
     }
 
+    [Fact]
+    public async Task BrowserGroupImportPreservesExistingGroupsAndDeduplicates()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var existing = new SocialGroup { Name = "My label", Url = "https://facebook.com/groups/existing/" };
+        await storage.SaveGroupAsync(existing, "Favorites");
+        var rows = new SocialGroup[]
+        {
+            new() { Name = "Facebook label", Url = "https://m.facebook.com/groups/Existing/" },
+            new() { Name = "New group", Url = "https://facebook.com/groups/new-group/" },
+            new() { Name = "Duplicate", Url = "https://m.facebook.com/groups/NEW-GROUP/?ref=groups" },
+            new() { Name = "Invalid", Url = "https://example.org/groups/fake/" }
+        };
+
+        Assert.Equal((1, 3), await storage.ImportGroupsAsync(rows));
+        Assert.Equal((0, 4), await storage.ImportGroupsAsync(rows));
+        var saved = await storage.QueryAsync(db => db.Groups.Include(group => group.Category)
+            .SingleAsync(group => group.Id == existing.Id));
+        Assert.Equal("My label", saved.Name);
+        Assert.Equal("Favorites", saved.Category?.Name);
+    }
+
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
     private sealed class Factory(DbContextOptions<PilotDb> options) : IDbContextFactory<PilotDb>

@@ -68,7 +68,7 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         });
     }
 
-    public async Task<(int Added, int Skipped)> ImportGroupsAsync(string path)
+    public Task<(int Added, int Skipped)> ImportGroupsAsync(string path)
     {
         using var csv = new TextFieldParser(path);
         csv.SetDelimiters(",");
@@ -98,22 +98,46 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
             }
         }
 
-        var added = 0;
-        await SaveAsync(async db =>
-        {
-            var existing = (await db.Groups.Select(group => group.Url).ToListAsync()).ToHashSet();
-            foreach (var (url, name) in rows)
-            {
-                if (!existing.Add(url))
-                {
-                    skipped++;
-                    continue;
-                }
+        return ImportGroupsAsync(rows.Select(row => new SocialGroup { Url = row.Key, Name = row.Value }), skipped);
+    }
 
-                db.Groups.Add(new SocialGroup { Url = url, Name = name });
-                added++;
+    public Task<(int Added, int Skipped)> ImportGroupsAsync(IEnumerable<SocialGroup> groups) =>
+        ImportGroupsAsync(groups, 0);
+
+    private async Task<(int Added, int Skipped)> ImportGroupsAsync(IEnumerable<SocialGroup> groups, int skipped)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var added = 0;
+        var existing = (await db.Groups.Select(group => group.Url).ToListAsync()).ToHashSet();
+        foreach (var group in groups)
+        {
+            string url;
+            try
+            {
+                url = Validation.GroupUrl(group.Url);
             }
-        });
+            catch (ArgumentException)
+            {
+                skipped++;
+                continue;
+            }
+
+            if (!existing.Add(url))
+            {
+                skipped++;
+                continue;
+            }
+
+            db.Groups.Add(new SocialGroup
+            {
+                Url = url, Name = string.IsNullOrWhiteSpace(group.Name)
+                    ? new Uri(url).Segments[^1].TrimEnd('/') : group.Name.Trim()
+            });
+            added++;
+        }
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
         return (added, skipped);
     }
 

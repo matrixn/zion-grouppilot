@@ -8,6 +8,7 @@ namespace GroupPilot_App;
 
 public sealed partial class MainWindow
 {
+    private const string FacebookGroups = "https://www.facebook.com/groups/joins/";
     private const string FacebookHome = "https://www.facebook.com/";
     private Window? facebookWindow;
     private WebView2? browser;
@@ -136,6 +137,12 @@ public sealed partial class MainWindow
         });
         FacebookAction(actions, "Open in default browser", () => OpenDefaultBrowserAsync(requestedFacebookUrl));
         FacebookAction(actions, "Import current post", ImportCurrentPostAsync);
+        FacebookAction(actions, "Open my groups", () =>
+        {
+            ReadyBrowser().Navigate(FacebookGroups);
+            return Task.CompletedTask;
+        });
+        FacebookAction(actions, "Import loaded groups", ImportFacebookGroupsAsync);
         reviewButton = FacebookAction(actions, "Record group review", ReviewCurrentGroupAsync);
         outcomeButton = FacebookAction(actions, "Record campaign outcome", RecordBrowserOutcomeAsync);
         reviewButton.IsEnabled = false;
@@ -284,6 +291,73 @@ public sealed partial class MainWindow
             Title = string.IsNullOrWhiteSpace(title) ? "Facebook post" : title.Trim(),
             Body = data.ValueKind == JsonValueKind.Object ? data.GetProperty("description").GetString() ?? "" : ""
         });
+    }
+
+    private async Task ImportFacebookGroupsAsync()
+    {
+        var source = CurrentFacebookPage();
+        if (!new Uri(source).AbsolutePath.TrimEnd('/').Equals("/groups/joins", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Sign in, then use Open my groups. Scroll to load more groups before importing.");
+
+        var core = ReadyBrowser();
+        var loadedNavigation = navigationId;
+        var result = await core.ExecuteScriptAsync("""
+            Array.from((document.querySelector('[role="main"]') ?? document).querySelectorAll('a[href]'))
+                .filter(link => link.getClientRects().length && /^\/groups\/[a-z0-9._-]+\/?$/i.test(link.pathname))
+                .map(link => ({
+                    Url: link.href,
+                    Name: (link.innerText.split('\n').find(line => line.trim()) ?? link.getAttribute('aria-label') ?? '').trim().slice(0, 250)
+                }))
+            """);
+        if (browser?.CoreWebView2 != core || navigationId != loadedNavigation || CurrentFacebookPage() != source)
+            throw new ArgumentException("The page changed. Open your groups and try again.");
+
+        var candidates = new Dictionary<string, SocialGroup>();
+        foreach (var row in JsonSerializer.Deserialize<SocialGroup[]>(result) ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(row.Url))
+                continue;
+            string url;
+            try
+            {
+                url = Validation.GroupUrl(row.Url);
+            }
+            catch (ArgumentException)
+            {
+                continue;
+            }
+            if (!candidates.TryGetValue(url, out var previous) || string.IsNullOrWhiteSpace(previous.Name))
+                candidates[url] = new SocialGroup { Url = url, Name = row.Name };
+        }
+
+        var known = model.Groups.Select(group => group.Url).ToHashSet();
+        var available = candidates.Values.Where(group => !known.Contains(group.Url)).ToArray();
+        if (available.Length == 0)
+            throw new ArgumentException(candidates.Count == 0
+                ? "No group links found. Wait for your groups to load or scroll and try again."
+                : "All detected groups are already saved.");
+
+        var choices = List(available.Select(group => new FacebookGroupChoice(group)).ToArray(), ListViewSelectionMode.Multiple);
+        choices.SelectAll();
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(Label($"{available.Length} new links from the loaded page. Review the selection before saving."));
+        content.Children.Add(choices);
+        Activate();
+        var dialog = Dialog("Import Facebook groups", content, "Save selected");
+        dialog.PrimaryButtonClick += (_, args) => args.Cancel = choices.SelectedItems.Count == 0;
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        var imported = await storage.ImportGroupsAsync(choices.SelectedItems.Cast<FacebookGroupChoice>().Select(choice => choice.Group));
+        await model.ReloadAsync();
+        NavigateTo("Groups");
+        if (facebookWindow is not null)
+            browserStatus!.Text = $"Saved {imported.Added} groups. Skipped {imported.Skipped}.";
+    }
+
+    private sealed record FacebookGroupChoice(SocialGroup Group)
+    {
+        public override string ToString() => string.IsNullOrWhiteSpace(Group.Name) ? Group.Url : $"{Group.Name} · {Group.Url}";
     }
 
     private async Task ReviewCurrentGroupAsync()
