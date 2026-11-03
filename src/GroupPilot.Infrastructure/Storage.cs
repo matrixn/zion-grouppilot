@@ -61,6 +61,8 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
             var sameUrl = existing.Url == group.Url;
             group.PostingAccess = sameUrl ? existing.PostingAccess : GroupPostingAccess.Unreviewed;
             group.ReviewedAt = sameUrl ? existing.ReviewedAt : null;
+            if (sameUrl)
+                CopyFacebookMetadata(existing, group);
             db.Entry(existing).CurrentValues.SetValues(group);
             existing.Category = category.Length == 0 ? null :
                 await db.Categories.SingleOrDefaultAsync(item => item.Name == category)
@@ -104,6 +106,63 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
     public Task<(int Added, int Skipped)> ImportGroupsAsync(IEnumerable<SocialGroup> groups) =>
         ImportGroupsAsync(groups, 0);
 
+    public async Task<(int Added, int Updated, int Removed)> SyncFacebookGroupsAsync(
+        IReadOnlyCollection<SocialGroup> scanned, IReadOnlyDictionary<int, string> expectedDirectory)
+    {
+        if (scanned.Count == 0)
+            throw new ArgumentException("Load at least one Facebook group before syncing.");
+
+        var incoming = scanned.ToDictionary(group => Validation.GroupUrl(group.Url));
+        await using var db = await factory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var existing = await db.Groups.ToListAsync();
+        if (existing.Count != expectedDirectory.Count ||
+            existing.Any(group => !expectedDirectory.TryGetValue(group.Id, out var url) || url != group.Url))
+            throw new ArgumentException("The group directory changed. Preview the sync again.");
+
+        var removed = 0;
+        var updated = 0;
+        foreach (var saved in existing)
+        {
+            if (incoming.Remove(saved.Url, out var match))
+            {
+                CopyFacebookMetadata(match, saved);
+                updated++;
+            }
+            else
+            {
+                db.Groups.Remove(saved);
+                removed++;
+            }
+        }
+
+        foreach (var (url, group) in incoming)
+            db.Groups.Add(NewImportedGroup(group, url));
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return (incoming.Count, updated, removed);
+    }
+
+    private static SocialGroup NewImportedGroup(SocialGroup source, string url)
+    {
+        var group = new SocialGroup
+        {
+            Url = url, Name = string.IsNullOrWhiteSpace(source.Name)
+                ? new Uri(url).Segments[^1].TrimEnd('/') : source.Name.Trim()
+        };
+        CopyFacebookMetadata(source, group);
+        return group;
+    }
+
+    private static void CopyFacebookMetadata(SocialGroup source, SocialGroup target)
+    {
+        target.MemberCount = source.MemberCount;
+        target.FacebookVisibility = source.FacebookVisibility;
+        target.FacebookActivity = source.FacebookActivity;
+        target.FacebookCardText = source.FacebookCardText;
+        target.FacebookScannedAt = source.FacebookScannedAt;
+    }
+
     private async Task<(int Added, int Skipped)> ImportGroupsAsync(IEnumerable<SocialGroup> groups, int skipped)
     {
         await using var db = await factory.CreateDbContextAsync();
@@ -129,11 +188,7 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
                 continue;
             }
 
-            db.Groups.Add(new SocialGroup
-            {
-                Url = url, Name = string.IsNullOrWhiteSpace(group.Name)
-                    ? new Uri(url).Segments[^1].TrimEnd('/') : group.Name.Trim()
-            });
+            db.Groups.Add(NewImportedGroup(group, url));
             added++;
         }
         await db.SaveChangesAsync();

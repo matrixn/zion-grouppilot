@@ -102,25 +102,58 @@ public sealed partial class MainWindow
         browserAddress = Input("Facebook address", FacebookHome);
         browserStatus = Label("");
         browserContext = Label("");
-        toolbar.Children.Add(browserAddress);
-        toolbar.Children.Add(browserStatus);
-        toolbar.Children.Add(browserContext);
-        var actions = ResponsiveGrid(toolbar, 3, 165);
-        FacebookAction(actions, "Open address", () =>
+        browserAddress.Header = null;
+        var navigation = new Grid { ColumnSpacing = 4 };
+        for (var index = 0; index < 4; index++)
+            navigation.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        navigation.ColumnDefinitions.Add(new ColumnDefinition());
+        navigation.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Task NavigateAddress()
         {
             var url = browserAddress.Text.Trim();
             if (!Validation.IsFacebookUrl(url))
                 throw new ArgumentException("Enter an HTTPS Facebook URL.");
             ReadyBrowser().Navigate(url);
             return Task.CompletedTask;
-        });
-        FacebookAction(actions, "Back", () =>
+        }
+
+        void IconAction(string glyph, string description, Action action, int column)
         {
-            ReadyBrowser();
-            if (browser?.CanGoBack == true)
-                browser.GoBack();
-            return Task.CompletedTask;
-        });
+            var button = FacebookAction(navigation, description, () =>
+            {
+                action();
+                return Task.CompletedTask;
+            });
+            button.Content = new FontIcon { Glyph = glyph, FontSize = 16 };
+            ToolTipService.SetToolTip(button, description);
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, description);
+            Grid.SetColumn(button, column);
+        }
+        IconAction("\uE72B", "Back", () => { if (ReadyBrowser().CanGoBack) ReadyBrowser().GoBack(); }, 0);
+        IconAction("\uE72A", "Forward", () => { if (ReadyBrowser().CanGoForward) ReadyBrowser().GoForward(); }, 1);
+        IconAction("\uE72C", "Reload", () => ReadyBrowser().Reload(), 2);
+        IconAction("\uE80F", "Facebook home", () => ReadyBrowser().Navigate(FacebookHome), 3);
+        Grid.SetColumn(browserAddress, 4);
+        browserAddress.PlaceholderText = "Facebook address";
+        browserAddress.KeyDown += async (_, args) =>
+        {
+            if (args.Key == Windows.System.VirtualKey.Enter)
+            {
+                args.Handled = true;
+                await model.RunAsync(NavigateAddress);
+                if (browserStatus is not null && model.Status.Length > 0)
+                    browserStatus.Text = model.Status;
+            }
+        };
+        navigation.Children.Add(browserAddress);
+        var actions = new StackPanel { Spacing = 4 };
+        var menu = new Button { Content = new SymbolIcon(Symbol.More), Flyout = new Flyout { Content = actions } };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(menu, "Facebook tools");
+        Grid.SetColumn(menu, 5);
+        navigation.Children.Add(menu);
+        toolbar.Children.Add(navigation);
+        toolbar.Children.Add(browserStatus);
+        toolbar.Children.Add(browserContext);
         FacebookAction(actions, "Continue with this session", () =>
         {
             var source = CurrentFacebookPage();
@@ -136,13 +169,15 @@ public sealed partial class MainWindow
             return Task.CompletedTask;
         });
         FacebookAction(actions, "Open in default browser", () => OpenDefaultBrowserAsync(requestedFacebookUrl));
-        FacebookAction(actions, "Import current post", ImportCurrentPostAsync);
-        FacebookAction(actions, "Open my groups", () =>
+        var imports = ResponsiveGrid(toolbar, 4, 155);
+        FacebookAction(imports, "Import current post", ImportCurrentPostAsync);
+        FacebookAction(imports, "Open my groups", () =>
         {
             ReadyBrowser().Navigate(FacebookGroups);
             return Task.CompletedTask;
         });
-        FacebookAction(actions, "Import loaded groups", ImportFacebookGroupsAsync);
+        FacebookAction(imports, "Import loaded groups", () => ImportFacebookGroupsAsync(sync: false));
+        FacebookAction(imports, "Sync groups", () => ImportFacebookGroupsAsync(sync: true));
         reviewButton = FacebookAction(actions, "Record group review", ReviewCurrentGroupAsync);
         outcomeButton = FacebookAction(actions, "Record campaign outcome", RecordBrowserOutcomeAsync);
         reviewButton.IsEnabled = false;
@@ -293,7 +328,7 @@ public sealed partial class MainWindow
         });
     }
 
-    private async Task ImportFacebookGroupsAsync()
+    private async Task ImportFacebookGroupsAsync(bool sync)
     {
         var source = CurrentFacebookPage();
         if (!new Uri(source).AbsolutePath.TrimEnd('/').Equals("/groups/joins", StringComparison.OrdinalIgnoreCase))
@@ -302,12 +337,28 @@ public sealed partial class MainWindow
         var core = ReadyBrowser();
         var loadedNavigation = navigationId;
         var result = await core.ExecuteScriptAsync("""
-            Array.from((document.querySelector('[role="main"]') ?? document).querySelectorAll('a[href]'))
-                .filter(link => link.getClientRects().length && /^\/groups\/[a-z0-9._-]+\/?$/i.test(link.pathname))
-                .map(link => ({
-                    Url: link.href,
-                    Name: (link.innerText.split('\n').find(line => line.trim()) ?? link.getAttribute('aria-label') ?? '').trim().slice(0, 250)
-                }))
+            (() => {
+                const groupPath = /^\/groups\/[a-z0-9._-]+\/?$/i;
+                const links = (document.querySelector('[role="main"]') ?? document).querySelectorAll('a[href]');
+                return Array.from(links).filter(link => link.getClientRects().length && groupPath.test(link.pathname))
+                    .map(link => {
+                        const key = link.pathname.toLowerCase().replace(/\/$/, '');
+                        let text = link.innerText;
+                        for (let card = link.parentElement, depth = 0; card && depth < 5; card = card.parentElement, depth++) {
+                            if (card.matches('[role="main"], main') || card.innerText.length > 1200)
+                                break;
+                            if (Array.from(card.querySelectorAll('a[href]')).some(other =>
+                                groupPath.test(other.pathname) && other.pathname.toLowerCase().replace(/\/$/, '') !== key))
+                                break;
+                            text = card.innerText;
+                        }
+                        return {
+                            Url: link.href,
+                            Name: (link.innerText.split('\n').find(line => line.trim()) ?? link.getAttribute('aria-label') ?? '').trim().slice(0, 250),
+                            FacebookCardText: text.trim().slice(0, 1200)
+                        };
+                    });
+            })()
             """);
         if (browser?.CoreWebView2 != core || navigationId != loadedNavigation || CurrentFacebookPage() != source)
             throw new ArgumentException("The page changed. Open your groups and try again.");
@@ -326,8 +377,29 @@ public sealed partial class MainWindow
             {
                 continue;
             }
-            if (!candidates.TryGetValue(url, out var previous) || string.IsNullOrWhiteSpace(previous.Name))
-                candidates[url] = new SocialGroup { Url = url, Name = row.Name };
+            row.Url = url;
+            FacebookGroupMetadata.Apply(row, row.FacebookCardText);
+            if (!candidates.TryGetValue(url, out var previous))
+            {
+                candidates[url] = row;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(previous.Name))
+                previous.Name = row.Name;
+            previous.MemberCount ??= row.MemberCount;
+            if (previous.FacebookVisibility.Length == 0)
+                previous.FacebookVisibility = row.FacebookVisibility;
+            if (previous.FacebookActivity.Length == 0)
+                previous.FacebookActivity = row.FacebookActivity;
+            if (row.FacebookCardText.Length > previous.FacebookCardText.Length)
+                previous.FacebookCardText = row.FacebookCardText;
+        }
+
+        if (sync)
+        {
+            await PreviewFacebookSyncAsync(candidates);
+            return;
         }
 
         var known = model.Groups.Select(group => group.Url).ToHashSet();
@@ -355,9 +427,49 @@ public sealed partial class MainWindow
             browserStatus!.Text = $"Saved {imported.Added} groups. Skipped {imported.Skipped}.";
     }
 
+    private async Task PreviewFacebookSyncAsync(Dictionary<string, SocialGroup> scanned)
+    {
+        if (scanned.Count == 0)
+            throw new ArgumentException("No group links found. Wait for the list to load and try again.");
+
+        var expected = model.Groups.ToDictionary(group => group.Id, group => group.Url);
+        var known = expected.Values.ToHashSet();
+        var added = scanned.Values.Where(group => !known.Contains(group.Url)).ToArray();
+        var removed = model.Groups.Where(group => !scanned.ContainsKey(group.Url)).ToArray();
+        var content = new StackPanel { Spacing = 10 };
+        content.Children.Add(Label($"Add {added.Length} · Refresh {scanned.Count - added.Length} · Remove {removed.Length}"));
+        content.Children.Add(Label("Sync uses only the groups loaded in Facebook. Scroll to the end before scanning. Removed groups become unavailable for existing campaign targets. Publishing history is kept."));
+        if (added.Length > 0)
+        {
+            content.Children.Add(Label("Groups to add"));
+            content.Children.Add(List(added, ListViewSelectionMode.None));
+        }
+        if (removed.Length > 0)
+        {
+            content.Children.Add(Label("Groups to remove"));
+            content.Children.Add(List(removed, ListViewSelectionMode.None));
+        }
+
+        var confirm = new CheckBox { Content = "I reviewed the changes and want to apply this scan." };
+        content.Children.Add(confirm);
+        Activate();
+        var dialog = Dialog("Sync Facebook groups", new ScrollViewer { Content = content, MaxHeight = 460 }, "Apply sync");
+        dialog.IsPrimaryButtonEnabled = false;
+        confirm.Checked += (_, _) => dialog.IsPrimaryButtonEnabled = true;
+        confirm.Unchecked += (_, _) => dialog.IsPrimaryButtonEnabled = false;
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        var result = await storage.SyncFacebookGroupsAsync(scanned.Values, expected);
+        await model.ReloadAsync();
+        NavigateTo("Groups");
+        if (facebookWindow is not null)
+            browserStatus!.Text = $"Sync complete. Added {result.Added}, refreshed {result.Updated}, removed {result.Removed}.";
+    }
+
     private sealed record FacebookGroupChoice(SocialGroup Group)
     {
-        public override string ToString() => string.IsNullOrWhiteSpace(Group.Name) ? Group.Url : $"{Group.Name} · {Group.Url}";
+        public override string ToString() => string.IsNullOrWhiteSpace(Group.Name) ? Group.Url : $"{Group} · {Group.Url}";
     }
 
     private async Task ReviewCurrentGroupAsync()

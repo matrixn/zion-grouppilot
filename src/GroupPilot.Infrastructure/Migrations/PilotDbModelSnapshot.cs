@@ -225,6 +225,24 @@ namespace GroupPilot.Infrastructure.Migrations
                     b.Property<bool>("Enabled")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("FacebookActivity")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FacebookCardText")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("FacebookScannedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FacebookVisibility")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("MemberCount")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");

@@ -1,5 +1,11 @@
 # Progres GroupPilot
 
+## 0.00.06 · Metadate și sincronizare Facebook
+
+- [x] Extragere metadate afișate în lista de grupuri, migrare SQLite și filtre de vizibilitate și membri.
+- [x] Bară de navigare compactă și sincronizare cu previzualizare, confirmare și salvare tranzacțională.
+- [ ] Verificare vizuală și validare a metadatelor pe lista reală a unui cont autentificat.
+
 ## 0.00.05 · Import de grupuri
 
 - [x] Previzualizare și import din pagina de grupuri încărcată în WebView2, cu validarea linkurilor și deduplicare în SQLite.

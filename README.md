@@ -1,6 +1,6 @@
 # GroupPilot
 
-**Versiune curentă** `0.00.05`
+**Versiune curentă** `0.00.06`
 
 GroupPilot este o aplicație desktop nativă pentru Windows 11. Pregătești postări, organizezi grupuri Facebook și urmărești local campaniile de distribuire. Trimiterea finală se face manual în interfața Facebook, pentru fiecare grup.
 
@@ -50,6 +50,13 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 
 ## Istoricul versiunilor
 
+### 0.00.06
+
+- [x] Salvate metadatele vizibile pe cardurile Facebook, inclusiv numărul de membri, vizibilitatea, activitatea, textul cardului și data scanării. Numerele prescurtate sunt aproximative. Câmpurile absente rămân necunoscute.
+- [x] Adăugate filtre de vizibilitate și număr minim de membri în Groups.
+- [x] Bara Facebook folosește pictograme de navigare, adresa se deschide cu Enter, iar comenzile secundare sunt în meniul cu trei puncte.
+- [x] **Groups → Facebook sync** deschide lista Facebook. Derulează până la final, apoi apasă **Sync groups** și verifică lista de ștergeri. Sincronizarea adaugă grupurile noi, actualizează metadatele celor păstrate și șterge grupurile absente din lista încărcată. Istoricul publicărilor se păstrează, iar țintele care referă grupuri șterse devin indisponibile.
+
 ### 0.00.05
 
 - [x] Import local al grupurilor încărcate în fereastra Facebook. Autentifică-te în WebView2, apasă **Open my groups**, derulează pentru a încărca lista, apoi apasă **Import loaded groups**. Verifică selecția înainte de salvare. Poți repeta importul după ce apar alte grupuri.
@@ -78,4 +85,4 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [x] Documentate fundația WinUI 3 inițială, pașii de build și lansare și etapele MVP.
 - [x] Stabilită versiunea de bază `0.00.01`.
 
-La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.05` corespunde metadatelor .NET `0.0.5` și MSIX `0.0.5.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.
+La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.06` corespunde metadatelor .NET `0.0.6` și MSIX `0.0.6.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.

@@ -140,6 +140,38 @@ public sealed class StorageTests : IDisposable
         Assert.Equal("Favorites", saved.Category?.Name);
     }
 
+    [Fact]
+    public async Task SyncUpdatesMetadataAndKeepsHistoryForRemovedGroup()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var keep = new SocialGroup { Url = "https://facebook.com/groups/keep/", Name = "Local name" };
+        var remove = new SocialGroup { Url = "https://facebook.com/groups/remove/", Name = "Remove" };
+        await storage.SaveGroupAsync(keep, "Favorites");
+        await storage.SaveGroupAsync(remove, "");
+        var post = new Post { Title = "Draft", Body = "Test", Kind = PostKind.New };
+        await storage.SavePostAsync(post);
+        await storage.SaveCampaignAsync("Campaign", post.Id, [remove.Id], null);
+        var target = await storage.QueryAsync(db => db.Targets.SingleAsync());
+        await storage.RecordAttemptAsync(target.Id, TargetStatus.Failed, "");
+
+        var scanned = new SocialGroup { Url = keep.Url, Name = "Remote name" };
+        FacebookGroupMetadata.Apply(scanned, "Grup privat · 2,4 mii de membri · 10 posts a day");
+        var added = new SocialGroup { Url = "https://facebook.com/groups/new/", Name = "New" };
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.SyncFacebookGroupsAsync([scanned], new Dictionary<int, string>()));
+        Assert.Equal((1, 1, 1), await storage.SyncFacebookGroupsAsync([scanned, added],
+            new Dictionary<int, string> { [keep.Id] = keep.Url, [remove.Id] = remove.Url }));
+        var saved = await storage.QueryAsync(db => db.Groups.Include(group => group.Category).SingleAsync(group => group.Id == keep.Id));
+        Assert.Equal("Local name", saved.Name);
+        Assert.Equal("Favorites", saved.Category?.Name);
+        Assert.Equal(2400, saved.MemberCount);
+        Assert.Equal("Private", saved.FacebookVisibility);
+        Assert.Equal("10 posts a day", saved.FacebookActivity);
+        var history = await storage.QueryAsync(db => db.Attempts.Include(attempt => attempt.Target).SingleAsync());
+        Assert.Null(history.Target.SocialGroupId);
+        Assert.Equal("Remove", history.Target.GroupName);
+    }
+
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
     private sealed class Factory(DbContextOptions<PilotDb> options) : IDbContextFactory<PilotDb>

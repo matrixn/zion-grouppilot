@@ -28,9 +28,16 @@ public sealed class SocialGroup
     public bool Enabled { get; set; } = true;
     public GroupPostingAccess PostingAccess { get; set; }
     public DateTimeOffset? ReviewedAt { get; set; }
+    public long? MemberCount { get; set; }
+    public string FacebookVisibility { get; set; } = "";
+    public string FacebookActivity { get; set; } = "";
+    public string FacebookCardText { get; set; } = "";
+    public DateTimeOffset? FacebookScannedAt { get; set; }
 
     public override string ToString() =>
-        $"{Name}{(Category is null ? "" : $" · {Category.Name}")} · {PostingAccess}";
+        $"{Name}{(Category is null ? "" : $" · {Category.Name}")} · {PostingAccess}" +
+        (MemberCount is { } members ? $" · ~{members:N0} members" : "") +
+        (FacebookVisibility.Length > 0 ? $" · {FacebookVisibility}" : "");
 
 }
 
