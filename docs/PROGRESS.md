@@ -1,0 +1,14 @@
+# Progres GroupPilot
+
+## 0.00.02 · Native Windows Foundation
+
+- [x] Migrare EF Core pentru conturi sociale, grupuri, categorii, postări, media, variante, campanii, ținte, încercări de publicare și preferințe.
+- [x] Separare între modelele și validarea din Core, persistența SQLite din Infrastructure și UI-ul WinUI din App.
+- [x] Fluxuri locale pentru drafturi și remixuri, grupuri și import CSV, campanii, reluarea țintelor și jurnalul de publicare.
+- [x] Browser Facebook WebView2 cu director de profil separat. Browserul poate prelua URL-ul și titlul paginii curente pentru un draft de tip Existing. Publicarea și atașarea imaginilor se fac în Facebook, cu confirmarea utilizatorului.
+- [x] Build Debug x64 al soluției, fără erori sau avertismente.
+- [x] Opt teste xUnit trecute. Acoperă validarea URL-urilor și a drafturilor, aplicarea migrării, redeschiderea SQLite, actualizarea postărilor, importul CSV, reluarea după eșec și păstrarea istoricului la ștergerea unui grup.
+- [x] Lansare cu `dotnet run`, fereastră GroupPilot identificată și inițializarea Dashboardului confirmată în log.
+- [ ] Verificare interactivă a paginilor și dialogurilor. Helperul de automatizare Windows a raportat că pipe-ul nativ este indisponibil.
+- [ ] Verificare WebView2 cu o sesiune Facebook autorizată, publicare manuală într-un grup de test și confirmarea notificării Windows.
+- [ ] Build și lansare pe x86 și ARM64.

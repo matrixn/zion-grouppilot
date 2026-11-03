@@ -1,38 +1,42 @@
-﻿using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
+using GroupPilot.Infrastructure;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Xaml;
+using Serilog;
 
 namespace GroupPilot_App;
 
-/// <summary>
-/// Provides application-specific behavior to supplement the default Application class.
-/// </summary>
 public partial class App : Application
 {
-    private Window? _window;
-    
-    /// <summary>
-    /// Initializes the singleton application object.  This is the first line of authored code
-    /// executed, and as such is the logical equivalent of main() or WinMain().
-    /// </summary>
-    public App()
-    {
-        InitializeComponent();
-    }
+    public static string DataDirectory { get; } = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GroupPilot");
 
-    /// <summary>
-    /// Invoked when the application is launched.
-    /// </summary>
-    /// <param name="args">Details about the launch request and process.</param>
-    protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+    private MainWindow? window;
+    private ServiceProvider? services;
+
+    public App() => InitializeComponent();
+
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _window = new MainWindow();
-        _window.Activate();
+        Directory.CreateDirectory(DataDirectory);
+        Log.Logger = new LoggerConfiguration()
+            .WriteTo.File(Path.Combine(DataDirectory, "logs", "app-.log"), rollingInterval: RollingInterval.Day)
+            .CreateLogger();
+        var connection = new SqliteConnectionStringBuilder { DataSource = Path.Combine(DataDirectory, "grouppilot.db") };
+        services = new ServiceCollection()
+            .AddDbContextFactory<PilotDb>(options => options.UseSqlite(connection.ToString()))
+            .AddSingleton<Storage>()
+            .AddSingleton<PilotViewModel>()
+            .AddSingleton<MainWindow>()
+            .BuildServiceProvider();
+
+        window = services.GetRequiredService<MainWindow>();
+        window.Closed += (_, _) =>
+        {
+            services.Dispose();
+            Log.CloseAndFlush();
+        };
+        window.Activate();
     }
 }

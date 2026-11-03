@@ -1,46 +1,53 @@
 # GroupPilot
 
-**Versiune curentă** `0.00.01`
+**Versiune curentă** `0.00.02`
 
-GroupPilot este o aplicație desktop nativă pentru Windows 11, concepută pentru pregătirea postărilor și gestionarea campaniilor de distribuire în grupuri Facebook. Fluxul planificat păstrează biblioteca de postări, grupurile și istoricul pe calculator. Utilizatorul confirmă publicarea în Facebook pentru fiecare grup.
-
-## Implementat
-
-- [x] Proiect desktop `src/GroupPilot.App` în C#, .NET 10, WinUI 3 și XAML, cu Windows App SDK.
-- [x] Fereastră cu fundal Mica, bară de titlu integrată, icon și navigare laterală prin `NavigationView`.
-- [x] Pagini de bază Home, About și Settings, cu navigare și revenire prin bara de titlu. Paginile afișează momentan conținutul demonstrativ al șablonului.
-- [x] Configurație de proiect pentru MSIX și lansare locală de dezvoltare cu `dotnet run`.
-
-## Ce urmează
-
-- [ ] Verifică lansarea ferestrei și navigarea pe Windows 11. Încercarea consemnată în conversația de proiect a ajuns la etapa de lansare și a fost blocată de Developer Mode.
-- [ ] Adaugă soluția `GroupPilot.slnx` și proiectele `GroupPilot.Core`, `GroupPilot.Infrastructure` și `GroupPilot.Tests`. Separă UI-ul de logica de business și persistență cu MVVM și dependency injection. Adaugă teste xUnit și logging local cu Serilog.
-- [ ] Construiește fundația locală EF Core și SQLite, cu migrații și stocare în directorul de date al utilizatorului. Completează dashboardul, setările și suportul pentru teme deschisă și întunecată.
-- [ ] Creează biblioteca și editorul de postări cu trei fluxuri. Salvează o postare Facebook existentă prin URL și metadatele accesibile, compune o postare nouă cu text, linkuri și media sau duplică și adaptează o postare din bibliotecă. Adaugă previzualizare, validare și ciorne.
-- [ ] Adaugă gestionarea grupurilor cu editare, import CSV, categorii, căutare, filtrare, reguli și stare activă.
-- [ ] Adaugă campanii salvate cu selecție de postare și grupuri, planificare locală, stare per grup, reluare și istoric al încercărilor și al linkurilor publicate.
-- [ ] Integrează Facebook prin WebView2 cu profil local separat și persistent. Autentificarea se face în interfața Facebook, iar trimiterea finală se confirmă de utilizator. Parolele și cookie-urile de sesiune rămân în browser.
+GroupPilot este o aplicație desktop nativă pentru Windows 11. Pregătești postări, organizezi grupuri Facebook și urmărești local campaniile de distribuire. Trimiterea finală se face manual în interfața Facebook, pentru fiecare grup.
 
 ## Dezvoltare locală
 
-Folosește Windows 11 și .NET SDK 10. Proiectul țintește `net10.0-windows10.0.26100.0` și declară platformele x86, x64 și ARM64. Din rădăcina repository-ului, în PowerShell:
+Folosește Windows 11, .NET SDK 10, Windows App Runtime și WebView2 Runtime. Proiectul WinUI țintește `net10.0-windows10.0.26100.0`. Activează **Developer Mode** pentru lansarea cu identitate de pachet. Poți deschide pagina din PowerShell cu `Start-Process "ms-settings:developers"`.
+
+Din rădăcina repository-ului:
 
 ```powershell
-Set-Location src/GroupPilot.App
-dotnet restore
-dotnet build
-dotnet run
+dotnet restore GroupPilot.slnx
+dotnet build GroupPilot.slnx
+dotnet test tests/GroupPilot.Tests
+dotnet run --project src/GroupPilot.App
 ```
 
-Pentru lansarea de dezvoltare cu identitate de pachet, activează **Developer Mode** din Windows Settings. Poți deschide direct pagina cu `Start-Process "ms-settings:developers"`.
+Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru modele și validare, `GroupPilot.Infrastructure` pentru persistența EF Core/SQLite și `GroupPilot.Tests` pentru testele xUnit. Aplicația aplică migrațiile la pornire. Directorul local `GroupPilot`, afișat în Settings, conține baza SQLite, imaginile copiate din drafturi, profilul WebView2 și logurile Serilog. Windows poate redirecționa acest director în `LocalCache\Local` pentru aplicația lansată cu identitate MSIX.
 
-Buildul versiunii `0.00.01` a fost verificat pe x64, fără erori sau avertismente. Verificarea ferestrei rămâne în plan.
+## Implementat
+
+- [x] Fereastră WinUI 3 cu Mica, bară nativă, navigare adaptivă și teme System, Light și Dark.
+- [x] Dashboard, Post Library, Post Composer, Groups, Campaigns, Facebook Browser, Publishing History și Settings.
+- [x] Soluție App/Core/Infrastructure/Tests, MVVM Toolkit, dependency injection, migrare SQLite inițială, loguri locale și teste xUnit.
+- [x] Bibliotecă de drafturi cu trei fluxuri. Salvează linkul unei postări Facebook și titlul disponibil în browser, compune o postare nouă cu text, link și imagini sau duplică și editează un draft ca remix. Editorul validează și previzualizează conținutul înainte de salvare.
+- [x] Grupuri cu editare, ștergere, căutare, categorii, note, reguli și stare activă. Importă CSV cu antetul `name,url` sau câte un URL pe rând. URL-urile echivalente sunt deduplicate.
+- [x] Campanii cu postare salvată, selecție de grupuri active, dată și oră de planificare, stare per grup și reluarea țintelor în așteptare sau eșuate.
+- [x] WebView2 cu profil persistent separat și navigare către postări și grupuri Facebook. Autentificarea are loc în interfața Facebook.
+- [x] Publicare asistată. Campania copiază textul sau linkul, afișează imaginile de atașat și deschide grupul. După trimiterea manuală în Facebook, utilizatorul înregistrează rezultatul și URL-ul publicat. Data planificată rămâne informație pentru utilizator.
+- [x] Notificare Windows pentru închiderea tuturor țintelor campaniei, unde API-ul este disponibil.
+
+## Ce urmează
+
+- [ ] Verifică interactiv cele opt pagini, redimensionarea, temele și dialogurile native pe Windows 11.
+- [ ] Verifică autentificarea manuală în WebView2, persistența sesiunii și fluxul complet de publicare cu un grup de test autorizat.
+- [ ] Verifică afișarea notificării Windows și lansarea pe x86 și ARM64.
 
 ## Istoricul versiunilor
 
+### 0.00.02
+
+- [x] Adăugate fundația WinUI, persistența SQLite, biblioteca și editorul de postări, gestionarea grupurilor, campaniile și browserul pentru publicare asistată.
+- [x] Adăugate testele de validare și persistență, cu detalii în [jurnalul de progres](docs/PROGRESS.md).
+- [x] Build x64 și lansare cu identitate de pachet. Inițializarea Dashboardului a fost confirmată în log.
+
 ### 0.00.01
 
-- [x] Documentate fundația WinUI 3, pașii de build și lansare și etapele MVP.
-- [x] Stabilită versiunea de bază `0.00.01`. Proiectul .NET folosește forma numerică `0.0.1`, iar manifestul MSIX `0.0.1.0`.
+- [x] Documentate fundația WinUI 3 inițială, pașii de build și lansare și etapele MVP.
+- [x] Stabilită versiunea de bază `0.00.01`.
 
-La fiecare modificare, incrementează ultima componentă a versiunii (de exemplu, `0.00.01` → `0.00.02`), sincronizează metadatele .NET și MSIX, adaugă în acest README ce s-a schimbat și actualizează bifele din plan unde este cazul. Validează modificarea, apoi fă commit și push pe ramura proiectului.
+La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.02` corespunde metadatelor .NET `0.0.2` și MSIX `0.0.2.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.
