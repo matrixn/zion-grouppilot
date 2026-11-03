@@ -1,6 +1,6 @@
 # GroupPilot
 
-**Versiune curentă** `0.00.06`
+**Versiune curentă** `0.00.07`
 
 GroupPilot este o aplicație desktop nativă pentru Windows 11. Pregătești postări, organizezi grupuri Facebook și urmărești local campaniile de distribuire. Trimiterea finală se face manual în interfața Facebook, pentru fiecare grup.
 
@@ -35,7 +35,7 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 
 ## Flux Facebook
 
-1. Din **Facebook Browser**, apasă **Open Facebook window**. Alege **Continue with this session** dacă ești deja autentificat în profilul GroupPilot sau autentifică-te direct în Facebook. **Open in default browser** folosește sesiunea browserului Windows, dacă există. Pentru a importa de acolo, deschide linkul postării în fereastra GroupPilot.
+1. Deschide **Facebook Browser** din meniul aplicației. Alege **Continue with this session** dacă ești deja autentificat în profilul GroupPilot sau autentifică-te direct în Facebook. **Open in default browser** folosește sesiunea browserului Windows, dacă există. Pentru a importa de acolo, deschide linkul postării în fereastra GroupPilot.
 2. Deschide permalinkul unei postări și apasă **Import current post**. Verifică URL-ul, titlul și descrierea disponibilă, apoi salvează draftul.
 3. În **Groups**, selectează un grup și apasă **Review in Facebook**. Verifică regulile și dreptul contului de a posta, apoi folosește **Record group review** pentru a salva observațiile și data verificării. Accesul poate varia în funcție de cont și în timp.
 4. Din campanie, alege **Prepare selected target** sau **Resume next target**. GroupPilot copiază textul ori linkul și salvează ținta ca fiind în lucru. Lipește conținutul, atașează imaginile și confirmă manual trimiterea în Facebook.
@@ -49,6 +49,12 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [ ] Verifică afișarea notificării Windows și lansarea pe x86 și ARM64.
 
 ## Istoricul versiunilor
+
+### 0.00.07
+
+- [x] Browserul Facebook este integrat în fereastra principală și păstrează pagina deschisă când schimbi secțiunea.
+- [x] **Open my groups → Sync groups** scanează lista de sus până jos, continuă cât timp apar grupuri și afișează previzualizarea înainte de salvare.
+- [x] Importul și sincronizarea sunt disponibile doar pe pagina **Grupurile tale**. Dacă pagina se schimbă sau scanarea stagnează timp de 45 de secunde, sincronizarea se oprește înainte de salvare.
 
 ### 0.00.06
 
@@ -85,4 +91,4 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [x] Documentate fundația WinUI 3 inițială, pașii de build și lansare și etapele MVP.
 - [x] Stabilită versiunea de bază `0.00.01`.
 
-La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.06` corespunde metadatelor .NET `0.0.6` și MSIX `0.0.6.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.
+La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.07` corespunde metadatelor .NET `0.0.7` și MSIX `0.0.7.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.

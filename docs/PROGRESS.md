@@ -1,5 +1,11 @@
 # Progres GroupPilot
 
+## 0.00.07 · Browser integrat și scanare automată
+
+- [x] WebView2 integrat în fereastra principală, cu profilul existent.
+- [x] Detectare pagină de grupuri, derulare automată și previzualizare înainte de actualizarea directorului.
+- [ ] Verificare a listei dinamice într-un cont Facebook autentificat.
+
 ## 0.00.06 · Metadate și sincronizare Facebook
 
 - [x] Extragere metadate afișate în lista de grupuri, migrare SQLite și filtre de vizibilitate și membri.

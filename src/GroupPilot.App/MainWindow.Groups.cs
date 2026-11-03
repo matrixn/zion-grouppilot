@@ -70,7 +70,7 @@ public sealed partial class MainWindow
             ShowGroups();
         });
         var sync = Section(page, "Facebook sync");
-        sync.Children.Add(Label("Open your groups, load the complete list and choose Sync groups to preview additions and removals."));
+        sync.Children.Add(Label("Open your groups and choose Sync groups. GroupPilot scrolls the list and previews additions and removals."));
         Action(sync, "Open my groups in Facebook", () => OpenFacebookAsync(FacebookGroups), primary: true);
         var importResult = Label("CSV columns: name,url. A URL-only file also works.");
         var import = Section(page, "Import groups");

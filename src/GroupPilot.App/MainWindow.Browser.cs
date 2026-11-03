@@ -10,13 +10,15 @@ public sealed partial class MainWindow
 {
     private const string FacebookGroups = "https://www.facebook.com/groups/joins/";
     private const string FacebookHome = "https://www.facebook.com/";
-    private Window? facebookWindow;
+    private Grid? facebookPage;
     private WebView2? browser;
     private TextBox? browserAddress;
     private TextBlock? browserStatus;
     private TextBlock? browserContext;
     private Button? reviewButton;
     private Button? outcomeButton;
+    private Button? importGroupsButton;
+    private Button? syncGroupsButton;
     private bool pageLoaded;
     private ulong navigationId;
     private bool browserReady;
@@ -27,12 +29,11 @@ public sealed partial class MainWindow
 
     private void ShowBrowser()
     {
-        var page = Page("Facebook Browser", "Facebook opens in its own window and reuses the GroupPilot browser profile.");
-        var session = Section(page, "Facebook session");
-        session.Children.Add(Label("If Facebook is already signed in here, continue with that account. Otherwise sign in in the Facebook window."));
-        var actions = ResponsiveGrid(session, 2, 205);
-        Action(actions, "Open Facebook window", () => OpenFacebookAsync(FacebookHome, keepCurrentPage: true), primary: true);
-        Action(actions, "Open in default browser", () => OpenDefaultBrowserAsync(FacebookHome));
+        if (facebookPage is null)
+            CreateFacebookPage();
+        FacebookHost.Content = facebookPage;
+        if (!browserReady && !model.Busy)
+            _ = model.RunAsync(() => OpenFacebookAsync(FacebookHome, keepCurrentPage: true));
     }
 
     private async Task OpenFacebookAsync(string url, SocialGroup? group = null,
@@ -41,11 +42,9 @@ public sealed partial class MainWindow
         if (!Validation.IsFacebookUrl(url))
             throw new ArgumentException("Enter an HTTPS Facebook URL.");
 
-        if (facebookWindow is null)
-            CreateFacebookWindow();
-        var window = facebookWindow!;
+        if (FacebookHost.Visibility != Visibility.Visible || facebookPage is null)
+            NavigateTo("Browser");
         var view = browser!;
-        window.Activate();
         if (!browserReady)
         {
             browserStatus!.Text = "Starting the local Facebook profile…";
@@ -53,21 +52,21 @@ public sealed partial class MainWindow
             {
                 var environment = await CoreWebView2Environment.CreateWithOptionsAsync(
                     null, Path.Combine(App.DataDirectory, "browser"), new CoreWebView2EnvironmentOptions());
-                if (facebookWindow != window)
+                if (browser != view)
                     return;
                 await view.EnsureCoreWebView2Async(environment);
-                if (facebookWindow != window)
+                if (browser != view)
                     return;
                 ConfigureFacebookView(view);
                 browserReady = true;
             }
-            catch (Exception) when (facebookWindow != window)
+            catch (Exception) when (browser != view)
             {
                 return;
             }
             catch
             {
-                window.Close();
+                browserStatus!.Text = "Could not start Facebook. Select Facebook Browser to retry.";
                 throw;
             }
         }
@@ -91,10 +90,8 @@ public sealed partial class MainWindow
             throw new ArgumentException("Windows could not open the default browser.");
     }
 
-    private void CreateFacebookWindow()
+    private void CreateFacebookPage()
     {
-        var window = new Window { Title = "GroupPilot · Facebook" };
-        window.AppWindow.SetIcon("Assets/AppIcon.ico");
         var layout = new Grid { Padding = new Thickness(16), RowSpacing = 8 };
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -176,40 +173,20 @@ public sealed partial class MainWindow
             ReadyBrowser().Navigate(FacebookGroups);
             return Task.CompletedTask;
         });
-        FacebookAction(imports, "Import loaded groups", () => ImportFacebookGroupsAsync(sync: false));
-        FacebookAction(imports, "Sync groups", () => ImportFacebookGroupsAsync(sync: true));
+        importGroupsButton = FacebookAction(imports, "Import loaded groups", () => ImportFacebookGroupsAsync(sync: false));
+        syncGroupsButton = FacebookAction(imports, "Sync groups", () => ImportFacebookGroupsAsync(sync: true));
+        UpdateGroupActions();
+        ToolTipService.SetToolTip(syncGroupsButton, "Use Open my groups first. Sync runs only on your Facebook groups list.");
         reviewButton = FacebookAction(actions, "Record group review", ReviewCurrentGroupAsync);
         outcomeButton = FacebookAction(actions, "Record campaign outcome", RecordBrowserOutcomeAsync);
         reviewButton.IsEnabled = false;
         outcomeButton.IsEnabled = false;
-        FacebookAction(actions, "Return to GroupPilot", () =>
-        {
-            Activate();
-            return Task.CompletedTask;
-        });
         layout.Children.Add(toolbar);
         var view = new WebView2();
         Grid.SetRow(view, 1);
         layout.Children.Add(view);
-        window.Content = layout;
-        facebookWindow = window;
+        facebookPage = layout;
         browser = view;
-        window.Closed += (_, _) =>
-        {
-            facebookWindow = null;
-            browserReady = false;
-            pageLoaded = false;
-            sessionConfirmed = false;
-            reviewGroup = null;
-            publishingTarget = null;
-            browser = null;
-            browserAddress = null;
-            browserStatus = null;
-            browserContext = null;
-            reviewButton = null;
-            outcomeButton = null;
-            view.Close();
-        };
     }
 
     private Button FacebookAction(Panel panel, string title, Func<Task> action)
@@ -217,11 +194,10 @@ public sealed partial class MainWindow
         var button = new Button { Content = title, HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 36 };
         button.Click += async (_, _) =>
         {
-            var window = facebookWindow;
-            if (window is null || model.Busy)
+            if (browser is null || model.Busy)
                 return;
             await model.RunAsync(action);
-            if (facebookWindow == window && model.Status.Length > 0)
+            if (browserStatus is not null && model.Status.Length > 0)
                 browserStatus!.Text = model.Status;
         };
         panel.Children.Add(button);
@@ -239,6 +215,11 @@ public sealed partial class MainWindow
             if (Validation.IsFacebookUrl(args.Uri))
                 core.Navigate(args.Uri);
         };
+        core.SourceChanged += (_, _) =>
+        {
+            if (browser == view)
+                UpdateGroupActions();
+        };
         view.NavigationStarting += (_, args) =>
         {
             if (browser != view)
@@ -251,6 +232,7 @@ public sealed partial class MainWindow
             {
                 navigationId = args.NavigationId;
                 pageLoaded = false;
+                UpdateGroupActions();
             }
             browserStatus!.Text = args.Cancel ? "Navigation outside Facebook was blocked." : "Loading…";
         };
@@ -260,6 +242,7 @@ public sealed partial class MainWindow
                 return;
 
             pageLoaded = args.IsSuccess && Validation.IsFacebookUrl(view.CoreWebView2.Source);
+            UpdateGroupActions();
             if (!pageLoaded)
             {
                 browserStatus!.Text = $"Facebook could not load ({args.WebErrorStatus}).";
@@ -328,72 +311,141 @@ public sealed partial class MainWindow
         });
     }
 
+    private static bool IsMyGroupsPage(string? url) =>
+        url is not null && Validation.IsFacebookUrl(url)
+        && new Uri(url).AbsolutePath.TrimEnd('/').Equals("/groups/joins", StringComparison.OrdinalIgnoreCase);
+
+    private void UpdateGroupActions()
+    {
+        var enabled = pageLoaded && IsMyGroupsPage(browser?.CoreWebView2?.Source);
+        if (importGroupsButton is not null)
+            importGroupsButton.IsEnabled = enabled;
+        if (syncGroupsButton is not null)
+            syncGroupsButton.IsEnabled = enabled;
+    }
+
     private async Task ImportFacebookGroupsAsync(bool sync)
     {
         var source = CurrentFacebookPage();
-        if (!new Uri(source).AbsolutePath.TrimEnd('/').Equals("/groups/joins", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Sign in, then use Open my groups. Scroll to load more groups before importing.");
+        if (!IsMyGroupsPage(source))
+            throw new ArgumentException("Sign in, then use Open my groups before importing or syncing.");
 
         var core = ReadyBrowser();
         var loadedNavigation = navigationId;
-        var result = await core.ExecuteScriptAsync("""
-            (() => {
-                const groupPath = /^\/groups\/[a-z0-9._-]+\/?$/i;
-                const links = (document.querySelector('[role="main"]') ?? document).querySelectorAll('a[href]');
-                return Array.from(links).filter(link => link.getClientRects().length && groupPath.test(link.pathname))
-                    .map(link => {
-                        const key = link.pathname.toLowerCase().replace(/\/$/, '');
-                        let text = link.innerText;
-                        for (let card = link.parentElement, depth = 0; card && depth < 5; card = card.parentElement, depth++) {
-                            if (card.matches('[role="main"], main') || card.innerText.length > 1200)
-                                break;
-                            if (Array.from(card.querySelectorAll('a[href]')).some(other =>
-                                groupPath.test(other.pathname) && other.pathname.toLowerCase().replace(/\/$/, '') !== key))
-                                break;
-                            text = card.innerText;
-                        }
-                        return {
-                            Url: link.href,
-                            Name: (link.innerText.split('\n').find(line => line.trim()) ?? link.getAttribute('aria-label') ?? '').trim().slice(0, 250),
-                            FacebookCardText: text.trim().slice(0, 1200)
-                        };
-                    });
-            })()
-            """);
-        if (browser?.CoreWebView2 != core || navigationId != loadedNavigation || CurrentFacebookPage() != source)
-            throw new ArgumentException("The page changed. Open your groups and try again.");
-
         var candidates = new Dictionary<string, SocialGroup>();
-        foreach (var row in JsonSerializer.Deserialize<SocialGroup[]>(result) ?? [])
+        var stalled = System.Diagnostics.Stopwatch.StartNew();
+        var stablePasses = 0;
+        double previousHeight = -1;
+        double previousTop = -1;
+        var restartAtTop = sync;
+        while (true)
         {
-            if (string.IsNullOrWhiteSpace(row.Url))
-                continue;
-            string url;
-            try
+            EnsureScanPage();
+            var result = await core.ExecuteScriptAsync("""
+                ((scrollMode, expectedUrl) => {
+                    if (location.href !== expectedUrl)
+                        return null;
+                    const groupPath = /^\/groups\/[a-z0-9._-]+\/?$/i;
+                    const main = document.querySelector('main, [role="main"]');
+                    if (!main)
+                        return { Rows: [], Height: 0, Top: 0, AtBottom: false, Loading: true };
+                    const links = main.querySelectorAll('a[href]');
+                    const groupLinks = Array.from(links).filter(link => link.getClientRects().length && groupPath.test(link.pathname));
+                    const rows = groupLinks
+                        .map(link => {
+                            const key = link.pathname.toLowerCase().replace(/\/$/, '');
+                            let text = link.innerText;
+                            for (let card = link.parentElement, depth = 0; card && depth < 5; card = card.parentElement, depth++) {
+                                if (card.matches('[role="main"], main') || card.innerText.length > 1200)
+                                    break;
+                                if (Array.from(card.querySelectorAll('a[href]')).some(other =>
+                                    groupPath.test(other.pathname) && other.pathname.toLowerCase().replace(/\/$/, '') !== key))
+                                    break;
+                                text = card.innerText;
+                            }
+                            return {
+                                Url: link.href,
+                                Name: (link.innerText.split('\n').find(line => line.trim()) ?? link.getAttribute('aria-label') ?? '').trim().slice(0, 250),
+                                FacebookCardText: text.trim().slice(0, 1200)
+                            };
+                        });
+                    let scroller = groupLinks.at(-1)?.parentElement;
+                    while (scroller && !(/auto|scroll|overlay/.test(getComputedStyle(scroller).overflowY)
+                        && scroller.scrollHeight > scroller.clientHeight + 2))
+                        scroller = scroller.parentElement;
+                    scroller ??= document.scrollingElement;
+                    const height = scroller?.scrollHeight ?? 0;
+                    const top = scroller?.scrollTop ?? 0;
+                    const atBottom = scroller && height - scroller.clientHeight - top < 4;
+                    const loading = main.getAttribute('aria-busy') === 'true' ||
+                        Array.from(main.querySelectorAll('[aria-busy="true"], [role="progressbar"]'))
+                            .some(element => element.getClientRects().length > 0);
+                    if (scrollMode && scroller) {
+                        // Walk the list rather than skipping virtualized rows between viewports.
+                        const next = scrollMode === 2 ? 0 : Math.min(height, scroller.scrollTop + Math.max(1, scroller.clientHeight * 0.85));
+                        scroller.scrollTo({ top: next, behavior: 'instant' });
+                    }
+                    return { Rows: rows, Height: height, Top: top, AtBottom: !!atBottom, Loading: loading };
+                })
+                """ + $"({(restartAtTop ? 2 : sync ? 1 : 0)}, {JsonSerializer.Serialize(source)})");
+            EnsureScanPage();
+            var scan = JsonSerializer.Deserialize<FacebookGroupScan>(result)
+                ?? throw new ArgumentException("Facebook did not return a group list. Try again.");
+            var previousCount = candidates.Count;
+            foreach (var row in scan.Rows)
             {
-                url = Validation.GroupUrl(row.Url);
-            }
-            catch (ArgumentException)
-            {
-                continue;
-            }
-            row.Url = url;
-            FacebookGroupMetadata.Apply(row, row.FacebookCardText);
-            if (!candidates.TryGetValue(url, out var previous))
-            {
-                candidates[url] = row;
-                continue;
+                if (string.IsNullOrWhiteSpace(row.Url))
+                    continue;
+                string url;
+                try
+                {
+                    url = Validation.GroupUrl(row.Url);
+                }
+                catch (ArgumentException)
+                {
+                    continue;
+                }
+                row.Url = url;
+                FacebookGroupMetadata.Apply(row, row.FacebookCardText);
+                if (!candidates.TryGetValue(url, out var previous))
+                {
+                    candidates[url] = row;
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(previous.Name))
+                    previous.Name = row.Name;
+                previous.MemberCount ??= row.MemberCount;
+                if (previous.FacebookVisibility.Length == 0)
+                    previous.FacebookVisibility = row.FacebookVisibility;
+                if (previous.FacebookActivity.Length == 0)
+                    previous.FacebookActivity = row.FacebookActivity;
+                if (row.FacebookCardText.Length > previous.FacebookCardText.Length)
+                    previous.FacebookCardText = row.FacebookCardText;
             }
 
-            if (string.IsNullOrWhiteSpace(previous.Name))
-                previous.Name = row.Name;
-            previous.MemberCount ??= row.MemberCount;
-            if (previous.FacebookVisibility.Length == 0)
-                previous.FacebookVisibility = row.FacebookVisibility;
-            if (previous.FacebookActivity.Length == 0)
-                previous.FacebookActivity = row.FacebookActivity;
-            if (row.FacebookCardText.Length > previous.FacebookCardText.Length)
-                previous.FacebookCardText = row.FacebookCardText;
+            if (!sync)
+                break;
+
+            var advanced = candidates.Count != previousCount || scan.Height != previousHeight || scan.Top != previousTop;
+            if (advanced)
+                stalled.Restart();
+            stablePasses = !restartAtTop && scan.AtBottom && !scan.Loading && !advanced ? stablePasses + 1 : 0;
+            browserStatus!.Text = $"Scanning Facebook groups… {candidates.Count} found.";
+            if (stablePasses >= 4)
+                break;
+            if (stalled.Elapsed >= TimeSpan.FromSeconds(45))
+                throw new ArgumentException("The group list stopped making progress. Sync was stopped before any groups were removed.");
+            previousHeight = scan.Height;
+            previousTop = scan.Top;
+            restartAtTop = false;
+            await Task.Delay(1250);
+        }
+
+        void EnsureScanPage()
+        {
+            if (browser?.CoreWebView2 != core || navigationId != loadedNavigation || CurrentFacebookPage() != source)
+                throw new ArgumentException("The page changed. Open your groups and try again.");
         }
 
         if (sync)
@@ -423,7 +475,7 @@ public sealed partial class MainWindow
         var imported = await storage.ImportGroupsAsync(choices.SelectedItems.Cast<FacebookGroupChoice>().Select(choice => choice.Group));
         await model.ReloadAsync();
         NavigateTo("Groups");
-        if (facebookWindow is not null)
+        if (browserStatus is not null)
             browserStatus!.Text = $"Saved {imported.Added} groups. Skipped {imported.Skipped}.";
     }
 
@@ -438,7 +490,7 @@ public sealed partial class MainWindow
         var removed = model.Groups.Where(group => !scanned.ContainsKey(group.Url)).ToArray();
         var content = new StackPanel { Spacing = 10 };
         content.Children.Add(Label($"Add {added.Length} · Refresh {scanned.Count - added.Length} · Remove {removed.Length}"));
-        content.Children.Add(Label("Sync uses only the groups loaded in Facebook. Scroll to the end before scanning. Removed groups become unavailable for existing campaign targets. Publishing history is kept."));
+        content.Children.Add(Label("Sync uses the groups Facebook returned during the scan. Check the removals before applying. Removed groups become unavailable for existing campaign targets. Publishing history is kept."));
         if (added.Length > 0)
         {
             content.Children.Add(Label("Groups to add"));
@@ -463,9 +515,11 @@ public sealed partial class MainWindow
         var result = await storage.SyncFacebookGroupsAsync(scanned.Values, expected);
         await model.ReloadAsync();
         NavigateTo("Groups");
-        if (facebookWindow is not null)
+        if (browserStatus is not null)
             browserStatus!.Text = $"Sync complete. Added {result.Added}, refreshed {result.Updated}, removed {result.Removed}.";
     }
+
+    private sealed record FacebookGroupScan(SocialGroup[] Rows, double Height, double Top, bool AtBottom, bool Loading);
 
     private sealed record FacebookGroupChoice(SocialGroup Group)
     {
@@ -512,7 +566,7 @@ public sealed partial class MainWindow
         {
             NavigateTo("Groups");
         }
-        if (facebookWindow is not null)
+        if (browserStatus is not null)
             browserStatus!.Text = "Group review saved.";
     }
 

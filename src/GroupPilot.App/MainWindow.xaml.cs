@@ -29,10 +29,16 @@ public sealed partial class MainWindow : Window
             Feedback.Message = model.Status;
             Feedback.IsOpen = model.Status.Length > 0;
             ContentHost.IsEnabled = !model.Busy;
+            FacebookHost.IsEnabled = !model.Busy;
             Navigation.IsEnabled = initialized && !model.Busy;
         };
         Root.Loaded += Initialize;
-        Closed += (_, _) => facebookWindow?.Close();
+        Closed += (_, _) =>
+        {
+            var view = browser;
+            browser = null;
+            view?.Close();
+        };
     }
 
     private async void Initialize(object sender, RoutedEventArgs args)
@@ -83,6 +89,8 @@ public sealed partial class MainWindow : Window
 
     private void Show(string? page)
     {
+        FacebookHost.Visibility = page == "Browser" ? Visibility.Visible : Visibility.Collapsed;
+        ContentHost.Visibility = page == "Browser" ? Visibility.Collapsed : Visibility.Visible;
         switch (page)
         {
             case "Dashboard": ShowDashboard(); break;

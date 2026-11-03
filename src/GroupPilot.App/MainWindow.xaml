@@ -29,6 +29,8 @@
                 <InfoBar x:Name="Feedback" Margin="24,8,24,0" IsClosable="False" />
                 <ContentControl x:Name="ContentHost" Grid.Row="1"
                                 HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                <ContentControl x:Name="FacebookHost" Grid.Row="1" Visibility="Collapsed"
+                                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
             </Grid>
         </NavigationView>
     </Grid>
