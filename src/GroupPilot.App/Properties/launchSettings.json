@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "GroupPilot.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "GroupPilot.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
