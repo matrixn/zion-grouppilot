@@ -98,11 +98,71 @@ public sealed partial class MainWindow : Window
 
     private StackPanel Page(string heading, string description)
     {
-        var panel = new StackPanel { Spacing = 12, Padding = new Thickness(24), MaxWidth = 920 };
-        panel.Children.Add(new TextBlock { Text = heading, Style = (Style)Application.Current.Resources["TitleTextBlockStyle"] });
-        panel.Children.Add(Label(description));
-        ContentHost.Content = new ScrollViewer { Content = panel };
+        var panel = new StackPanel { Spacing = 18, Padding = new Thickness(24, 24, 24, 36) };
+        var header = new StackPanel { Spacing = 6, Margin = new Thickness(0, 0, 0, 6) };
+        header.Children.Add(new TextBlock
+        {
+            Text = heading, TextWrapping = TextWrapping.Wrap, FontSize = 32,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        header.Children.Add(new TextBlock { Text = description, Style = ResourceStyle("WorkspaceDescriptionStyle") });
+        panel.Children.Add(header);
+        ContentHost.Content = new ScrollViewer
+        {
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Content = panel
+        };
         return panel;
+    }
+
+    private static Style ResourceStyle(string key) => (Style)Application.Current.Resources[key];
+
+    private static StackPanel Section(Panel parent, string heading)
+    {
+        var content = new StackPanel { Spacing = 12 };
+        content.Children.Add(new TextBlock
+        {
+            Text = heading, FontSize = 18, TextWrapping = TextWrapping.Wrap,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+        });
+        parent.Children.Add(new Border { Style = ResourceStyle("WorkspaceCardStyle"), Child = content });
+        return content;
+    }
+
+    private static Grid ResponsiveGrid(Panel parent, int maxColumns, double minimumColumnWidth, params UIElement[] children)
+    {
+        var grid = new Grid { ColumnSpacing = 12, RowSpacing = 10 };
+        foreach (var child in children)
+            grid.Children.Add(child);
+
+        var currentColumns = 0;
+        void Arrange(double width)
+        {
+            var columns = Math.Clamp((int)((width + grid.ColumnSpacing) /
+                (minimumColumnWidth + grid.ColumnSpacing)), 1, maxColumns);
+            if (columns == currentColumns && grid.RowDefinitions.Count == (grid.Children.Count + columns - 1) / columns)
+                return;
+            currentColumns = columns;
+            grid.ColumnDefinitions.Clear();
+            grid.RowDefinitions.Clear();
+            for (var column = 0; column < columns; column++)
+                grid.ColumnDefinitions.Add(new ColumnDefinition());
+            for (var index = 0; index < grid.Children.Count; index++)
+            {
+                if (index % columns == 0)
+                    grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var child = (FrameworkElement)grid.Children[index];
+                Grid.SetRow(child, index / columns);
+                Grid.SetColumn(child, index % columns);
+            }
+        }
+
+        grid.Loaded += (_, _) => Arrange(grid.ActualWidth);
+        grid.SizeChanged += (_, args) => Arrange(args.NewSize.Width);
+        parent.Children.Add(grid);
+        return grid;
     }
 
     private static TextBlock Label(string text) => new() { Text = text, TextWrapping = TextWrapping.Wrap };
@@ -110,7 +170,7 @@ public sealed partial class MainWindow : Window
 
     private static ComboBox Choices<T>(string header, IEnumerable<T> items, T? selected = default)
     {
-        var box = new ComboBox { Header = header, ItemsSource = items };
+        var box = new ComboBox { Header = header, ItemsSource = items, HorizontalAlignment = HorizontalAlignment.Stretch };
         box.SelectedItem = selected;
         return box;
     }
@@ -118,9 +178,16 @@ public sealed partial class MainWindow : Window
     private static ListView List<T>(IEnumerable<T> items, ListViewSelectionMode mode = ListViewSelectionMode.Single) =>
         new() { ItemsSource = items, SelectionMode = mode, MaxHeight = 300 };
 
-    private void Action(Panel panel, string title, Func<Task> handler, string success = "")
+    private void Action(Panel panel, string title, Func<Task> handler, string success = "", bool primary = false)
     {
         var button = new Button { Content = title };
+        if (primary)
+            button.Style = ResourceStyle("WorkspacePrimaryButtonStyle");
+        if (panel is Grid)
+        {
+            button.MinHeight = 36;
+            button.HorizontalAlignment = HorizontalAlignment.Stretch;
+        }
         button.Click += async (_, _) => await model.RunAsync(handler, success);
         panel.Children.Add(button);
     }
@@ -145,35 +212,43 @@ public sealed partial class MainWindow : Window
     private void ShowDashboard()
     {
         var page = Page("Dashboard", "Prepare posts, organize groups and track assisted publishing on this PC.");
-        var counts = new StackPanel { Spacing = 8 };
-        counts.Children.Add(Label($"{model.Posts.Count} saved posts"));
-        counts.Children.Add(Label($"{model.Groups.Count} saved groups"));
-        counts.Children.Add(Label($"{model.Campaigns.Count} saved campaigns"));
-        page.Children.Add(new Border
+        var summary = ResponsiveGrid(page, 3, 180);
+        void Metric(string label, int count)
         {
-            Style = (Style)Application.Current.Resources["DashboardCardStyle"],
-            Child = counts
-        });
-        Action(page, "Compose a post", () =>
-        {
-            editingPost = null;
-            NavigateTo("Composer");
-            return Task.CompletedTask;
-        });
+            var card = Section(summary, label);
+            card.Children.Add(new TextBlock { Text = count.ToString(), FontSize = 34 });
+        }
+        Metric("Saved posts", model.Posts.Count);
+        Metric("Saved groups", model.Groups.Count);
+        Metric("Campaigns", model.Campaigns.Count);
+
+        var workspace = Section(page, "Quick actions");
+        workspace.Children.Add(Label("Start a draft or open one of your workspaces."));
+        var actions = ResponsiveGrid(workspace, 3, 168);
+        Action(actions, "Compose a post", () => Edit(null), primary: true);
+        Action(actions, "Manage groups", () => OpenPage("Groups"));
+        Action(actions, "View campaigns", () => OpenPage("Campaigns"));
+    }
+
+    private Task OpenPage(string page)
+    {
+        NavigateTo(page);
+        return Task.CompletedTask;
     }
 
     private void ShowHistory()
     {
         var page = Page("Publishing History", "Outcomes recorded by the user after working in Facebook.");
-        page.Children.Add(model.History.Count == 0 ? Label("No publishing attempts yet.") : List(model.History));
+        Section(page, "Publishing activity").Children.Add(model.History.Count == 0 ? Label("No publishing attempts yet.") : List(model.History));
     }
 
     private void ShowSettings()
     {
         var page = Page("Settings", "Preferences and data are stored locally.");
-        var theme = Choices("Appearance", Enum.GetNames<ElementTheme>(), model.Theme);
-        page.Children.Add(theme);
-        Action(page, "Save appearance", async () =>
+        var appearance = Section(page, "Appearance");
+        var theme = Choices("Theme", Enum.GetNames<ElementTheme>(), model.Theme);
+        appearance.Children.Add(theme);
+        Action(appearance, "Save appearance", async () =>
         {
             var value = (string)theme.SelectedItem;
             await storage.SaveAsync(async db =>
@@ -186,7 +261,10 @@ public sealed partial class MainWindow : Window
             });
             await model.ReloadAsync();
             ApplyTheme(value);
-        }, "Appearance saved.");
-        page.Children.Add(Label($"Local data: {App.DataDirectory}"));
+        }, "Appearance saved.", primary: true);
+        Section(page, "Local storage").Children.Add(new TextBlock
+        {
+            Text = App.DataDirectory, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true
+        });
     }
 }

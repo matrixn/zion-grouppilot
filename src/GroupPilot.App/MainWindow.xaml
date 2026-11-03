@@ -10,10 +10,10 @@
         <TitleBar x:Name="AppTitleBar" Title="GroupPilot"
                   IsPaneToggleButtonVisible="True" PaneToggleRequested="TogglePane">
             <TitleBar.IconSource>
-                <ImageIconSource ImageSource="Assets/AppIcon.ico" />
+                <ImageIconSource ImageSource="ms-appx:///Assets/Brand.png" />
             </TitleBar.IconSource>
         </TitleBar>
-        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Auto"
+        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Auto" OpenPaneLength="234"
                         IsBackButtonVisible="Collapsed" IsPaneToggleButtonVisible="False"
                         SelectionChanged="Navigate">
             <NavigationView.MenuItems>
@@ -26,7 +26,7 @@
                 <NavigationViewItem Content="Publishing History" Tag="History" Icon="Clock" />
             </NavigationView.MenuItems>
             <Grid RowDefinitions="Auto,*">
-                <InfoBar x:Name="Feedback" Margin="20,8,20,0" IsClosable="False" />
+                <InfoBar x:Name="Feedback" Margin="24,8,24,0" IsClosable="False" />
                 <ContentControl x:Name="ContentHost" Grid.Row="1"
                                 HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
             </Grid>

@@ -14,10 +14,12 @@ public sealed partial class MainWindow
     private void ShowCampaigns()
     {
         var page = Page("Campaigns", "Save a plan and resume pending or failed targets. Schedule times are local planning metadata.");
+        var saved = Section(page, "Saved campaigns");
         var campaigns = List(model.Campaigns);
-        page.Children.Add(model.Campaigns.Count == 0 ? Label("No campaigns yet.") : campaigns);
-        Action(page, "Create campaign", CreateCampaignAsync);
-        Action(page, "Open selected campaign", () =>
+        saved.Children.Add(model.Campaigns.Count == 0 ? Label("No campaigns yet.") : campaigns);
+        var actions = ResponsiveGrid(saved, 2, 182);
+        Action(actions, "Create campaign", CreateCampaignAsync, primary: true);
+        Action(actions, "Open selected campaign", () =>
         {
             ShowCampaignDetails(campaigns.SelectedItem as Campaign ?? throw new ArgumentException("Select a campaign."));
             return Task.CompletedTask;
@@ -37,8 +39,10 @@ public sealed partial class MainWindow
         var date = new CalendarDatePicker { Header = "Planned date (optional)" };
         var time = new TimePicker { Header = "Planned time (local)", SelectedTime = new TimeSpan(9, 0, 0) };
         var error = Label("");
-        foreach (var control in new UIElement[] { name, post, Label("Target groups"), targets, date, time, error })
+        foreach (var control in new UIElement[] { name, post, Label("Target groups"), targets })
             fields.Children.Add(control);
+        ResponsiveGrid(fields, 2, 160, date, time);
+        fields.Children.Add(error);
 
         var dialog = Dialog("Create campaign", new ScrollViewer { Content = fields }, "Save");
         DateTimeOffset? scheduled = null;
@@ -79,17 +83,19 @@ public sealed partial class MainWindow
         if (campaign.ScheduledFor is { } scheduled)
             page.Children.Add(Label($"Planned for {scheduled.ToLocalTime():f}"));
         var targets = List(campaign.Targets);
-        page.Children.Add(targets);
+        var targetSection = Section(page, "Publishing targets");
+        targetSection.Children.Add(targets);
+        var actions = ResponsiveGrid(targetSection, 3, 180);
         CampaignGroup Selected() => targets.SelectedItem as CampaignGroup ?? throw new ArgumentException("Select a target.");
 
-        Action(page, "Resume next target", async () =>
+        Action(actions, "Resume next target", async () =>
         {
             var next = campaign.Targets.FirstOrDefault(CanPublish)
                 ?? throw new ArgumentException("All targets are closed or unavailable.");
             await AssistAsync(post, next);
-        });
-        Action(page, "Prepare selected target", () => AssistAsync(post, Selected()));
-        Action(page, "Record selected outcome", () => RecordOutcomeAsync(campaign, Selected()));
+        }, primary: true);
+        Action(actions, "Prepare selected target", () => AssistAsync(post, Selected()));
+        Action(actions, "Record selected outcome", () => RecordOutcomeAsync(campaign, Selected()));
         Action(page, "Back to campaigns", () =>
         {
             activeCampaign = null;
@@ -164,6 +170,7 @@ public sealed partial class MainWindow
         {
             if (AppNotificationManager.IsSupported())
                 AppNotificationManager.Default.Show(new AppNotificationBuilder()
+                    .SetAppLogoOverride(new Uri("ms-appx:///Assets/Brand.png"), AppNotificationImageCrop.Default)
                     .AddText("GroupPilot").AddText("All targets in this campaign are closed.").BuildNotification());
         }
         catch (Exception ex)

@@ -8,6 +8,7 @@ public sealed partial class MainWindow
     private void ShowGroups()
     {
         var page = Page("Groups", "Manage Facebook group URLs, categories and posting rules.");
+        var directory = Section(page, "Group directory");
         var search = Input("Search groups");
         var categories = Choices("Category", new[] { "All categories" }.Concat(
             model.Groups.Select(group => group.Category?.Name).OfType<string>().Distinct().Order()), "All categories");
@@ -23,19 +24,19 @@ public sealed partial class MainWindow
             empty.Text = matches.Length == 0 ? "No groups match. Add a group or import a CSV." : "";
         }
 
-        page.Children.Add(search);
-        page.Children.Add(categories);
-        page.Children.Add(empty);
-        page.Children.Add(groups);
+        ResponsiveGrid(directory, 2, 235, search, categories);
+        directory.Children.Add(empty);
+        directory.Children.Add(groups);
         search.TextChanged += (_, _) => Filter();
         categories.SelectionChanged += (_, _) => Filter();
         Filter();
 
         SocialGroup Selected() => groups.SelectedItem as SocialGroup ?? throw new ArgumentException("Select a group first.");
-        Action(page, "Add group", () => EditGroupAsync(null));
-        Action(page, "Edit selected group", () => EditGroupAsync(Selected()));
-        Action(page, "Open selected group", () => OpenFacebookAsync(Selected().Url));
-        Action(page, "Delete selected group", async () =>
+        var actions = ResponsiveGrid(directory, 4, 160);
+        Action(actions, "Add group", () => EditGroupAsync(null), primary: true);
+        Action(actions, "Edit selected group", () => EditGroupAsync(Selected()));
+        Action(actions, "Open selected group", () => OpenFacebookAsync(Selected().Url));
+        Action(actions, "Delete selected group", async () =>
         {
             var group = Selected();
             if (await Dialog("Delete group?", Label($"Remove {group.Name} from the group library? Campaign history is kept."), "Delete").ShowAsync()
@@ -51,8 +52,9 @@ public sealed partial class MainWindow
             ShowGroups();
         });
         var importResult = Label("CSV columns: name,url. A URL-only file also works.");
-        page.Children.Add(importResult);
-        Action(page, "Import CSV", async () =>
+        var import = Section(page, "Import groups");
+        import.Children.Add(importResult);
+        Action(import, "Import CSV", async () =>
         {
             if (await PickFileAsync(".csv") is not { } path)
                 return;
@@ -65,7 +67,7 @@ public sealed partial class MainWindow
 
     private async Task EditGroupAsync(SocialGroup? source)
     {
-        var fields = new StackPanel { Spacing = 8 };
+        var fields = new StackPanel { Spacing = 12 };
         var name = Input("Name", source?.Name ?? "");
         var url = Input("Facebook group URL", source?.Url ?? "");
         var category = Input("Category", source?.Category?.Name ?? "");

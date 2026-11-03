@@ -1,5 +1,12 @@
 # Progres GroupPilot
 
+## 0.00.03 · Layout și identitate vizuală
+
+- [x] Layout comun aliniat la stânga, cu Dashboard pe carduri, secțiuni de formular și grile care se reașază la redimensionare.
+- [x] Branding F în bara de titlu, iconul executabilului, resursele MSIX, splash și notificări.
+- [x] Build x64, 8 teste xUnit și inițializarea Dashboardului după lansare.
+- [ ] Verificare vizuală interactivă pe mai multe dimensiuni de fereastră. Helperul Windows a raportat că pipe-ul nativ este indisponibil.
+
 ## 0.00.02 · Native Windows Foundation
 
 - [x] Migrare EF Core pentru conturi sociale, grupuri, categorii, postări, media, variante, campanii, ținte, încercări de publicare și preferințe.

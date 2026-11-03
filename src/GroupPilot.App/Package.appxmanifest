@@ -12,12 +12,12 @@
   <Identity
     Name="8B93BFB0-5D89-4888-A7F3-A26D1C75878B"
     Publisher="CN=AppPublisher"
-    Version="0.0.2.0" />
+    Version="0.0.3.0" />
 
   <mp:PhoneIdentity PhoneProductId="8B93BFB0-5D89-4888-A7F3-A26D1C75878B" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>GroupPilot.App</DisplayName>
+    <DisplayName>GroupPilot</DisplayName>
     <PublisherDisplayName>AppPublisher</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <uap10:PackageIntegrity>
@@ -39,13 +39,13 @@
       Executable="$targetnametoken$.exe"
       EntryPoint="$targetentrypoint$">
       <uap:VisualElements
-        DisplayName="GroupPilot.App"
-        Description="GroupPilot.App"
+        DisplayName="GroupPilot"
+        Description="GroupPilot"
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
-        <uap:SplashScreen Image="Assets\SplashScreen.png" />
+        <uap:SplashScreen Image="Assets\SplashScreen.png" BackgroundColor="#101318" />
       </uap:VisualElements>
     </Application>
   </Applications>

@@ -9,11 +9,13 @@ public sealed partial class MainWindow
     private void ShowLibrary()
     {
         var page = Page("Post Library", "Open a draft, create a remix or review the source on Facebook.");
+        var library = Section(page, "Saved drafts");
         var posts = List(model.Posts);
-        page.Children.Add(model.Posts.Count == 0 ? Label("No posts yet. Create a draft to get started.") : posts);
-        Action(page, "New draft", () => Edit(null));
-        Action(page, "Edit selected draft", () => Edit(SelectedPost(posts)));
-        Action(page, "Remix selected post", () =>
+        library.Children.Add(model.Posts.Count == 0 ? Label("No posts yet. Create a draft to get started.") : posts);
+        var actions = ResponsiveGrid(library, 4, 168);
+        Action(actions, "New draft", () => Edit(null), primary: true);
+        Action(actions, "Edit selected draft", () => Edit(SelectedPost(posts)));
+        Action(actions, "Remix selected post", () =>
         {
             var source = SelectedPost(posts);
             return Edit(new Post
@@ -23,7 +25,7 @@ public sealed partial class MainWindow
                 Variants = source.Variants.Select(variant => new PostVariant { Body = variant.Body }).ToList()
             });
         });
-        Action(page, "Open Facebook post", () => OpenFacebookAsync(SelectedPost(posts).Url));
+        Action(actions, "Open Facebook post", () => OpenFacebookAsync(SelectedPost(posts).Url));
     }
 
     private static Post SelectedPost(ListView posts) => posts.SelectedItem as Post
@@ -49,10 +51,15 @@ public sealed partial class MainWindow
         var variant = Input("Optional alternate text", source?.Variants.FirstOrDefault()?.Body ?? "");
         var paths = source?.Media.Select(media => media.Path).ToList() ?? [];
         var images = List(paths.ToArray());
-        foreach (var control in new Microsoft.UI.Xaml.UIElement[] { kind, title, body, url, variant, images })
-            page.Children.Add(control);
+        var details = Section(page, "Draft details");
+        ResponsiveGrid(details, 2, 250, kind, title);
+        details.Children.Add(body);
+        ResponsiveGrid(details, 2, 250, url, variant);
 
-        Action(page, "Attach image", async () =>
+        var media = Section(page, "Images");
+        media.Children.Add(images);
+        var mediaActions = ResponsiveGrid(media, 2, 185);
+        Action(mediaActions, "Attach image", async () =>
         {
             var path = await PickFileAsync(".jpg", ".jpeg", ".png", ".webp", ".gif");
             if (path is not null && !paths.Contains(path, StringComparer.OrdinalIgnoreCase))
@@ -61,7 +68,7 @@ public sealed partial class MainWindow
                 images.ItemsSource = paths.ToArray();
             }
         });
-        Action(page, "Remove selected image", () =>
+        Action(mediaActions, "Remove selected image", () =>
         {
             if (images.SelectedItem is not string path)
                 throw new ArgumentException("Select an image to remove.");
@@ -78,7 +85,8 @@ public sealed partial class MainWindow
             Variants = string.IsNullOrWhiteSpace(variant.Text) ? [] : [new PostVariant { Body = variant.Text.Trim() }]
         };
 
-        Action(page, "Preview", async () =>
+        var draftActions = ResponsiveGrid(page, 2, 160);
+        Action(draftActions, "Preview", async () =>
         {
             var post = Draft();
             Validation.CheckPost(post);
@@ -104,7 +112,7 @@ public sealed partial class MainWindow
             dialog.CloseButtonText = "Close";
             await dialog.ShowAsync();
         });
-        Action(page, "Save draft", async () =>
+        Action(draftActions, "Save draft", async () =>
         {
             var draft = Draft();
             Validation.CheckPost(draft);
@@ -133,6 +141,6 @@ public sealed partial class MainWindow
             await model.ReloadAsync();
             editingPost = null;
             NavigateTo("Library");
-        }, "Draft saved.");
+        }, "Draft saved.", primary: true);
     }
 }
