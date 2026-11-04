@@ -8,8 +8,8 @@ public sealed class StorageTests : IDisposable
 {
     private readonly string folder = Directory.CreateTempSubdirectory("grouppilot-test-").FullName;
 
-    private Storage Open() => new(new Factory(new DbContextOptionsBuilder<PilotDb>()
-        .UseSqlite($"Data Source={Path.Combine(folder, "test.db")};Pooling=False").Options));
+    private Storage Open(TimeProvider? clock = null) => new(new Factory(new DbContextOptionsBuilder<PilotDb>()
+        .UseSqlite($"Data Source={Path.Combine(folder, "test.db")};Pooling=False").Options), clock);
 
     [Fact]
     public async Task MigrationAndDraftsSurviveReopening()
@@ -291,6 +291,49 @@ public sealed class StorageTests : IDisposable
 
         await storage.SaveGroupAsync(new SocialGroup { Id = saved.Id, Url = saved.Url, Name = "Local name" }, "");
         Assert.Equal(group.FacebookImageUrl, await storage.QueryAsync(db => db.Groups.Select(item => item.FacebookImageUrl).SingleAsync()));
+    }
+
+    [Fact]
+    public async Task SharePauseSurvivesReopeningAndAppliesAcrossCampaigns()
+    {
+        var clock = new ManualClock();
+        var storage = Open(clock);
+        await storage.InitializeAsync();
+        var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/example/" };
+        await storage.SaveGroupAsync(group, "");
+        var post = new Post { Kind = PostKind.Existing, Title = "Post", Url = "https://facebook.com/example/posts/1" };
+        await storage.SavePostAsync(post);
+        var first = await storage.SaveCampaignAsync("First", post.Id, [group.Id], null, 120);
+        var second = await storage.SaveCampaignAsync("Second", post.Id, [group.Id], null, 30);
+        var campaigns = await storage.QueryAsync(db => db.Campaigns.Include(campaign => campaign.Targets).ToListAsync());
+        var firstTarget = campaigns.Single(campaign => campaign.Id == first).Targets.Single().Id;
+        var secondTarget = campaigns.Single(campaign => campaign.Id == second).Targets.Single().Id;
+
+        await storage.BeginTargetAsync(firstTarget);
+        Assert.Equal(clock.Now.AddSeconds(120), await Open(clock).GetNextShareAtAsync());
+        await Assert.ThrowsAsync<ArgumentException>(() => Open(clock).BeginTargetAsync(secondTarget));
+        Assert.Equal(TargetStatus.Pending, await storage.QueryAsync(db => db.Targets
+            .Where(target => target.Id == secondTarget).Select(target => target.Status).SingleAsync()));
+
+        clock.Now = clock.Now.AddSeconds(10);
+        await storage.RecordAttemptAsync(firstTarget, TargetStatus.Published, "https://facebook.com/groups/example/posts/42");
+        Assert.Equal(clock.Now.AddSeconds(120), await storage.GetNextShareAtAsync());
+
+        clock.Now = clock.Now.AddSeconds(119);
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.BeginTargetAsync(secondTarget));
+        clock.Now = clock.Now.AddSeconds(1);
+        await Open(clock).BeginTargetAsync(secondTarget);
+        Assert.Equal(clock.Now.AddSeconds(30), await storage.GetNextShareAtAsync());
+        await storage.UpdateCampaignPauseAsync(second, 60);
+        Assert.Equal(60, await storage.QueryAsync(db => db.Campaigns.Where(campaign => campaign.Id == second)
+            .Select(campaign => campaign.PauseSeconds).SingleAsync()));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.UpdateCampaignPauseAsync(second, -1));
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = new(2026, 11, 4, 8, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => Now;
     }
 
     public void Dispose() => Directory.Delete(folder, recursive: true);

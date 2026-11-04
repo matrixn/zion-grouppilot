@@ -75,6 +75,7 @@ public sealed class Campaign
     public int PostId { get; set; }
     public Post Post { get; set; } = null!;
     public DateTimeOffset? ScheduledFor { get; set; }
+    public int PauseSeconds { get; set; } = 120;
     public bool IsArchived { get; set; }
     public List<CampaignGroup> Targets { get; set; } = [];
     public override string ToString() => $"{Name} · {Targets.Count} groups" +
@@ -106,4 +107,5 @@ public sealed class AppSettings
 {
     public int Id { get; set; }
     public string Theme { get; set; } = "Default";
+    public DateTimeOffset? NextShareAt { get; set; }
 }

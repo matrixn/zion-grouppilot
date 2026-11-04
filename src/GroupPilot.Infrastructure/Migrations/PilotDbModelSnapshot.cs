@@ -23,6 +23,9 @@ namespace GroupPilot.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTimeOffset?>("NextShareAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Theme")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -44,6 +47,11 @@ namespace GroupPilot.Infrastructure.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("PauseSeconds")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(120);
 
                     b.Property<int>("PostId")
                         .HasColumnType("INTEGER");

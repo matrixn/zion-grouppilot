@@ -18,6 +18,7 @@ public sealed class PilotDb(DbContextOptions<PilotDb> options) : DbContext(optio
 
     protected override void OnModelCreating(ModelBuilder model)
     {
+        model.Entity<Campaign>().Property(campaign => campaign.PauseSeconds).HasDefaultValue(120);
         model.Entity<SocialGroup>().HasIndex(group => group.Url).IsUnique();
         model.Entity<GroupCategory>().HasIndex(category => category.Name).IsUnique();
         model.Entity<CampaignGroup>().HasOne<SocialGroup>().WithMany()

@@ -79,6 +79,7 @@ public sealed partial class MainWindow
         reviewButton!.IsEnabled = group is not null;
         outcomeButton!.IsEnabled = target is not null;
         outcomeButton.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
+        prepareShareButton!.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
         browserContext!.Text = target is not null ? $"Campaign target · {group?.Name} · Submit manually, then record the outcome." :
             group is not null ? $"Group review · {group.Name}" :
             "Browse Facebook or import a post from its permalink.";
@@ -185,6 +186,8 @@ public sealed partial class MainWindow
         UpdateGroupActions();
         ToolTipService.SetToolTip(syncGroupsButton, "Use Open my groups first. Sync runs only on your Facebook groups list.");
         reviewButton = FacebookAction(actions, "Record group review", ReviewCurrentGroupAsync);
+        prepareShareButton = FacebookAction(toolbar, "Prepare selected share", PrepareShareComposerAsync);
+        prepareShareButton.Visibility = Visibility.Collapsed;
         outcomeButton = FacebookAction(toolbar, "Record campaign outcome", RecordBrowserOutcomeAsync);
         outcomeButton.Visibility = Visibility.Collapsed;
         reviewButton.IsEnabled = false;
@@ -244,7 +247,7 @@ public sealed partial class MainWindow
             }
             browserStatus!.Text = args.Cancel ? "Navigation outside Facebook was blocked." : "Loading…";
         };
-        view.NavigationCompleted += (_, args) =>
+        view.NavigationCompleted += (sender, args) =>
         {
             if (browser != view || args.NavigationId != navigationId)
                 return;
@@ -266,6 +269,8 @@ public sealed partial class MainWindow
             }
             else
             {
+                if (publishingTarget is not null && reviewGroup is not null && Validation.IsSameFacebookGroup(reviewGroup.Url, source))
+                    _ = TryPrepareShareAfterNavigationAsync(view);
                 browserStatus!.Text = sessionConfirmed ? "Using the Facebook session you confirmed." :
                     "If your account is already signed in, choose Continue with this session.";
             }

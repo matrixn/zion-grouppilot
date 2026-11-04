@@ -1,5 +1,11 @@
 # Progres GroupPilot
 
+## 0.00.16 · Pauză între distribuiri
+
+- [x] Pauză configurabilă per campanie, implicit 120 de secunde, cu următoarea disponibilitate salvată în SQLite pentru profilul local Facebook.
+- [x] Numărătoare inversă cu oprire și pregătirea linkului în editorul grupului selectat.
+- [ ] Verificare într-un grup Facebook autorizat, inclusiv previzualizarea linkului și trimiterea manuală.
+
 ## 0.00.15 · Carduri de grup și ștergere de campanii
 
 - [x] Carduri cu miniaturi de grup, intervale generate din date și sortare după membri.

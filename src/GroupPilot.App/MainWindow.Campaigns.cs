@@ -77,10 +77,13 @@ public sealed partial class MainWindow
         var targets = List(groups, ListViewSelectionMode.Multiple);
         var date = new CalendarDatePicker { Header = "Planned date (optional)" };
         var time = new TimePicker { Header = "Planned time (local)", SelectedTime = new TimeSpan(9, 0, 0) };
+        var pause = CampaignPauseInput(120);
         var error = Label("");
         foreach (var control in new UIElement[] { name, Label("Select a Facebook post"), post, Label("Target groups"), targets })
             fields.Children.Add(control);
         ResponsiveGrid(fields, 2, 160, date, time);
+        fields.Children.Add(pause);
+        fields.Children.Add(Label("The pause controls the interval between shares. Facebook may apply additional limits."));
         fields.Children.Add(error);
 
         var dialog = Dialog("Create campaign", new ScrollViewer { Content = fields }, "Save");
@@ -92,6 +95,8 @@ public sealed partial class MainWindow
             {
                 if (string.IsNullOrWhiteSpace(name.Text) || targets.SelectedItems.Count == 0 || post.SelectedItem is null)
                     throw new ArgumentException("Enter a name, select a post and select at least one group.");
+                if (double.IsNaN(pause.Value) || pause.Value < 1 || pause.Value > 86400 || pause.Value != Math.Truncate(pause.Value))
+                    throw new ArgumentException("Enter a whole number of seconds from 1 to 86400.");
                 if (date.Date is { } selected)
                 {
                     var local = DateTime.SpecifyKind(selected.Date + time.SelectedTime.GetValueOrDefault(), DateTimeKind.Unspecified);
@@ -115,7 +120,7 @@ public sealed partial class MainWindow
             return;
 
         var campaignId = await storage.SaveCampaignAsync(name.Text.Trim(), selected.Id,
-            targets.SelectedItems.Cast<SocialGroup>().Select(group => group.Id).ToArray(), scheduled);
+            targets.SelectedItems.Cast<SocialGroup>().Select(group => group.Id).ToArray(), scheduled, (int)pause.Value);
         await model.ReloadAsync();
         var campaign = model.Campaigns.Single(item => item.Id == campaignId);
         ShowCampaignDetails(campaign);
@@ -129,6 +134,18 @@ public sealed partial class MainWindow
         var page = Page(campaign.Name, $"{post.Title} · {campaign.Targets.Count} targets");
         if (campaign.ScheduledFor is { } scheduled)
             page.Children.Add(Label($"Planned for {scheduled.ToLocalTime():f}"));
+        var pacing = Section(page, "Pause between shares");
+        var pause = CampaignPauseInput(campaign.PauseSeconds);
+        pacing.Children.Add(pause);
+        pacing.Children.Add(Label("120 seconds is an application default. It does not guarantee that Facebook will allow a share."));
+        Action(pacing, "Save pause", async () =>
+        {
+            if (double.IsNaN(pause.Value) || pause.Value != Math.Truncate(pause.Value))
+                throw new ArgumentException("Enter a whole number of seconds.");
+            await storage.UpdateCampaignPauseAsync(campaign.Id, (int)pause.Value);
+            await model.ReloadAsync();
+            ShowCampaignDetails(model.Campaigns.Single(item => item.Id == campaign.Id));
+        }, "Pause saved.");
         var targets = List(campaign.Targets.OrderBy(target => target.Id));
         targets.SelectedItem = campaign.Targets.FirstOrDefault(target => target.Status == TargetStatus.InProgress);
         var targetSection = Section(page, "Publishing targets");
@@ -154,6 +171,50 @@ public sealed partial class MainWindow
         });
     }
 
+    private static NumberBox CampaignPauseInput(int seconds) => new()
+    {
+        Header = "Pause in seconds", Minimum = 1, Maximum = 86400, Value = seconds,
+        SmallChange = 10, LargeChange = 60, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact
+    };
+
+    private async Task<bool> WaitForSharePauseAsync()
+    {
+        while (await storage.GetNextShareAtAsync() is { } next && next > DateTimeOffset.UtcNow)
+        {
+            var message = Label("");
+            var dialog = Dialog("Pause before next share", message, "");
+            dialog.CloseButtonText = "Stop";
+            var timer = DispatcherQueue.CreateTimer();
+            timer.Interval = TimeSpan.FromMilliseconds(250);
+            var elapsed = false;
+            void Update()
+            {
+                var remaining = Math.Max(0, (int)Math.Ceiling((next - DateTimeOffset.UtcNow).TotalSeconds));
+                message.Text = $"Next group opens in {remaining / 60:00}:{remaining % 60:00}";
+                if (remaining == 0)
+                {
+                    elapsed = true;
+                    dialog.Hide();
+                }
+            }
+
+            timer.Tick += (_, _) => Update();
+            message.Text = $"Next group opens at {next.ToLocalTime():T}";
+            timer.Start();
+            try
+            {
+                await dialog.ShowAsync();
+                if (!elapsed)
+                    return false;
+            }
+            finally
+            {
+                timer.Stop();
+            }
+        }
+        return true;
+    }
+
     private async Task DeleteCampaignAsync(Campaign campaign)
     {
         if (await Dialog($"Delete {campaign.Name}?", Label("Remove this campaign from the list? Its publishing history is kept."),
@@ -164,6 +225,8 @@ public sealed partial class MainWindow
         if (publishingTarget?.CampaignId == campaign.Id)
         {
             publishingTarget = null;
+            if (prepareShareButton is not null)
+                prepareShareButton.Visibility = Visibility.Collapsed;
             if (outcomeButton is not null)
             {
                 outcomeButton.IsEnabled = false;
@@ -203,13 +266,15 @@ public sealed partial class MainWindow
     {
         if (!CanPublish(target))
             throw new ArgumentException("This target is closed, awaiting approval, or its group is unavailable or changed.");
+        if (!await WaitForSharePauseAsync())
+            return;
         var group = model.Groups.Single(item => item.Id == target.SocialGroupId);
         var panel = new StackPanel { Spacing = 8 };
         if (target.Status == TargetStatus.InProgress)
         {
             panel.Children.Add(Label("This target was left in progress. Check Facebook for an existing submission before posting again. If it was already submitted, record its outcome."));
         }
-        panel.Children.Add(Label("Check your account, the group rules and permission to post in Facebook. Paste the copied Facebook post link and share it manually."));
+        panel.Children.Add(Label("Check your account, the group rules and permission to post in Facebook. GroupPilot will try to insert the selected post link in the group editor. Review it and confirm the submission in Facebook."));
         panel.Children.Add(Label(group.ReviewedAt is { } reviewed
             ? $"Last manual review: {group.PostingAccess} · {reviewed.ToLocalTime():g}"
             : "Posting access has not been reviewed."));
@@ -266,6 +331,8 @@ public sealed partial class MainWindow
         if (publishingTarget?.TargetId == target.Id)
         {
             publishingTarget = null;
+            if (prepareShareButton is not null)
+                prepareShareButton.Visibility = Visibility.Collapsed;
             if (outcomeButton is not null)
             {
                 outcomeButton.IsEnabled = false;

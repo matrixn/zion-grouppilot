@@ -4,8 +4,10 @@ using Microsoft.VisualBasic.FileIO;
 
 namespace GroupPilot.Infrastructure;
 
-public sealed class Storage(IDbContextFactory<PilotDb> factory)
+public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? timeProvider = null)
 {
+    private readonly TimeProvider clock = timeProvider ?? TimeProvider.System;
+
     public async Task InitializeAsync()
     {
         await using var db = await factory.CreateDbContextAsync();
@@ -260,12 +262,13 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         return (added, skipped);
     }
 
-    public async Task<int> SaveCampaignAsync(string name, int postId, IReadOnlyCollection<int> groupIds, DateTimeOffset? schedule)
+    public async Task<int> SaveCampaignAsync(string name, int postId, IReadOnlyCollection<int> groupIds, DateTimeOffset? schedule, int pauseSeconds = 120)
     {
         if (string.IsNullOrWhiteSpace(name) || groupIds.Count == 0)
             throw new ArgumentException("Enter a campaign name and select at least one group.");
 
-        var campaign = new Campaign { Name = name, PostId = postId, ScheduledFor = schedule };
+        CheckPause(pauseSeconds);
+        var campaign = new Campaign { Name = name, PostId = postId, ScheduledFor = schedule, PauseSeconds = pauseSeconds };
         await SaveAsync(async db =>
         {
             var groups = await db.Groups.Where(group => group.Enabled && groupIds.Contains(group.Id)).ToListAsync();
@@ -306,10 +309,34 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         });
     }
 
-    public Task BeginTargetAsync(int targetId) => SaveAsync(async db =>
+    public Task<DateTimeOffset?> GetNextShareAtAsync() =>
+        QueryAsync(db => db.Settings.Where(settings => settings.Id == 1)
+            .Select(settings => settings.NextShareAt).FirstOrDefaultAsync());
+
+    private static void CheckPause(int seconds)
     {
-        if (!await db.Campaigns.AnyAsync(campaign => !campaign.IsArchived && campaign.Targets.Any(item => item.Id == targetId)))
-            throw new ArgumentException("This campaign is no longer available.");
+        if (seconds < 1 || seconds > 86400)
+            throw new ArgumentException("Choose a pause between 1 and 86400 seconds.");
+    }
+
+    public Task UpdateCampaignPauseAsync(int campaignId, int seconds)
+    {
+        CheckPause(seconds);
+        return SaveAsync(async db =>
+        {
+            var campaign = await db.Campaigns.SingleOrDefaultAsync(item => item.Id == campaignId && !item.IsArchived)
+                ?? throw new ArgumentException("Campaign unavailable.");
+            campaign.PauseSeconds = seconds;
+        });
+    }
+
+    public async Task BeginTargetAsync(int targetId)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var campaign = await db.Campaigns.SingleOrDefaultAsync(item =>
+            !item.IsArchived && item.Targets.Any(target => target.Id == targetId))
+            ?? throw new ArgumentException("This campaign is no longer available.");
         var target = await db.Targets.FindAsync(targetId) ?? throw new ArgumentException("Target unavailable.");
         if (target.Status is TargetStatus.Published or TargetStatus.Skipped or TargetStatus.AwaitingApproval)
             throw new ArgumentException("This target is closed or awaiting approval.");
@@ -317,28 +344,56 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         if (group is null || !group.Enabled || group.Url != target.GroupUrl || group.PostingAccess == GroupPostingAccess.Unavailable)
             throw new ArgumentException("This group is unavailable or its saved URL changed.");
 
+        var settings = await db.Settings.FindAsync(1);
+        var now = clock.GetUtcNow();
+        if (settings?.NextShareAt is { } next && next > now)
+            throw new ArgumentException($"Wait {Math.Ceiling((next - now).TotalSeconds)} seconds before preparing another share.");
+        if (settings is null)
+        {
+            settings = new AppSettings { Id = 1 };
+            db.Settings.Add(settings);
+        }
+        settings.NextShareAt = now.AddSeconds(campaign.PauseSeconds);
         target.Status = TargetStatus.InProgress;
-    });
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+    }
 
-    public Task RecordAttemptAsync(int targetId, TargetStatus status, string publishedUrl)
+    public async Task RecordAttemptAsync(int targetId, TargetStatus status, string publishedUrl)
     {
-        if (status is not (TargetStatus.Published or TargetStatus.Failed or TargetStatus.Skipped or TargetStatus.AwaitingApproval) || (status == TargetStatus.Published && !Validation.IsFacebookPostUrl(publishedUrl)))
+        if (status is not (TargetStatus.Published or TargetStatus.Failed or TargetStatus.Skipped or TargetStatus.AwaitingApproval)
+            || (status == TargetStatus.Published && !Validation.IsFacebookPostUrl(publishedUrl)))
             throw new ArgumentException("Choose an outcome and enter the Facebook post URL for a successful publication.");
 
-        return SaveAsync(async db =>
-        {
-            if (!await db.Campaigns.AnyAsync(campaign => !campaign.IsArchived && campaign.Targets.Any(item => item.Id == targetId)))
-                throw new ArgumentException("This campaign is no longer available.");
-            var target = await db.Targets.FindAsync(targetId) ?? throw new InvalidOperationException("Target unavailable.");
-            if (target.Status is TargetStatus.Published or TargetStatus.Skipped)
-                throw new InvalidOperationException("This target is already closed.");
+        await using var db = await factory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var campaign = await db.Campaigns.SingleOrDefaultAsync(item =>
+            !item.IsArchived && item.Targets.Any(target => target.Id == targetId))
+            ?? throw new ArgumentException("This campaign is no longer available.");
+        var target = await db.Targets.FindAsync(targetId) ?? throw new InvalidOperationException("Target unavailable.");
+        if (target.Status is TargetStatus.Published or TargetStatus.Skipped)
+            throw new InvalidOperationException("This target is already closed.");
 
-            target.Status = status;
-            db.Attempts.Add(new PublishingAttempt
+        var now = clock.GetUtcNow();
+        if (status is TargetStatus.Published or TargetStatus.AwaitingApproval or TargetStatus.Failed)
+        {
+            var settings = await db.Settings.FindAsync(1);
+            if (settings is null)
             {
-                CampaignGroupId = targetId, Status = status, RecordedAt = DateTimeOffset.UtcNow,
-                PublishedUrl = status == TargetStatus.Published ? publishedUrl : ""
-            });
+                settings = new AppSettings { Id = 1 };
+                db.Settings.Add(settings);
+            }
+            var next = now.AddSeconds(campaign.PauseSeconds);
+            if (settings.NextShareAt is null || next > settings.NextShareAt)
+                settings.NextShareAt = next;
+        }
+        target.Status = status;
+        db.Attempts.Add(new PublishingAttempt
+        {
+            CampaignGroupId = targetId, Status = status, RecordedAt = now,
+            PublishedUrl = status == TargetStatus.Published ? publishedUrl : ""
         });
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
     }
 }
