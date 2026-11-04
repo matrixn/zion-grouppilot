@@ -21,6 +21,32 @@ public static class Validation
             "story.php" or "permalink.php" or "photo" or "photo.php" or "watch");
     }
 
+    public static string? FacebookPostImportUrl(string url)
+    {
+        if (!IsFacebookPostUrl(url))
+            return null;
+
+        var uri = new Uri(url);
+        var path = uri.AbsolutePath.TrimEnd('/');
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var query = uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .Where(part => part.Length == 2).ToArray();
+        if (query.Any(part => part[0] is "comment_id" or "reply_comment_id"))
+            return null;
+        var identity = query.Where(part => part[0] is "id" or "story_fbid" or "fbid" or "v")
+            .OrderBy(part => part[0], StringComparer.Ordinal)
+            .Select(part => $"{part[0]}={part[1]}").ToArray();
+        var hasPathId = segments.Zip(segments.Skip(1)).Any(pair =>
+            pair.First is "posts" or "videos" or "reel" or "permalink" or "share" or "photo");
+        var hasQueryId = segments.LastOrDefault() is "story.php" or "permalink.php" or "photo.php" or "photo" or "watch"
+            && identity.Any(part => !part.StartsWith("id=", StringComparison.Ordinal));
+        if (!hasPathId && !hasQueryId)
+            return null;
+
+        return "https://www.facebook.com" + path + (identity.Length == 0 ? "" : "?" + string.Join("&", identity));
+    }
+
     public static bool IsFacebookLoginPage(string value)
     {
         if (!IsFacebookUrl(value))

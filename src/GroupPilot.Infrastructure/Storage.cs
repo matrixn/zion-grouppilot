@@ -25,6 +25,31 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         await db.SaveChangesAsync();
     }
 
+    public async Task<int> ImportFacebookPostsAsync(IReadOnlyCollection<Post> posts)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var known = (await db.Posts.Where(post => post.Kind == PostKind.Existing)
+                .Select(post => post.Url).ToListAsync())
+            .Select(Validation.FacebookPostImportUrl).OfType<string>().ToHashSet();
+        var added = 0;
+        foreach (var post in posts.Reverse())
+        {
+            var url = Validation.FacebookPostImportUrl(post.Url);
+            if (url is null || !known.Add(url))
+                continue;
+
+            var draft = new Post { Kind = PostKind.Existing, Url = url, Title = post.Title, Body = post.Body };
+            Validation.CheckPost(draft);
+            db.Posts.Add(draft);
+            added++;
+        }
+
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return added;
+    }
+
     public Task SavePostAsync(Post post)
     {
         Validation.CheckPost(post);

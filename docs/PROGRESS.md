@@ -1,5 +1,10 @@
 # Progres GroupPilot
 
+## 0.00.08 · Import de postări
+
+- [x] Importul a până la zece postări afișate într-un profil sau într-o pagină Facebook, cu previzualizare și deduplicare.
+- [ ] Verificare a detectării postărilor într-un profil Facebook autentificat.
+
 ## 0.00.07 · Browser integrat și scanare automată
 
 - [x] WebView2 integrat în fereastra principală, cu profilul existent.

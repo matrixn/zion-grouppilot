@@ -172,6 +172,32 @@ public sealed class StorageTests : IDisposable
         Assert.Equal("Remove", history.Target.GroupName);
     }
 
+    [Fact]
+    public async Task FacebookPostImportDeduplicatesTrackingLinksAndPreservesDrafts()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        await storage.SavePostAsync(new Post
+        {
+            Kind = PostKind.Existing, Title = "My draft", Url = "https://m.facebook.com/example/posts/1/?ref=feed"
+        });
+        var batch = new Post[]
+        {
+            new() { Title = "Duplicate", Url = "https://www.facebook.com/example/posts/1/" },
+            new() { Title = "New", Body = "Caption", Url = "https://www.facebook.com/story.php?ref=feed&story_fbid=2&id=3" },
+            new() { Title = "Comment", Url = "https://www.facebook.com/example/posts/4/?comment_id=5" },
+            new() { Title = "Feed", Url = "https://www.facebook.com/example/posts/" }
+        };
+
+        Assert.Equal(1, await storage.ImportFacebookPostsAsync(batch));
+        Assert.Equal(0, await storage.ImportFacebookPostsAsync(batch));
+        var saved = await storage.QueryAsync(db => db.Posts.OrderBy(post => post.Id).ToListAsync());
+        Assert.Equal("My draft", saved[0].Title);
+        Assert.Equal("https://www.facebook.com/story.php?id=3&story_fbid=2", saved[1].Url);
+        Assert.Equal(PostKind.Existing, saved[1].Kind);
+        Assert.Equal("Caption", saved[1].Body);
+    }
+
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
     private sealed class Factory(DbContextOptions<PilotDb> options) : IDbContextFactory<PilotDb>

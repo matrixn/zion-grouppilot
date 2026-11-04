@@ -167,7 +167,8 @@ public sealed partial class MainWindow
         });
         FacebookAction(actions, "Open in default browser", () => OpenDefaultBrowserAsync(requestedFacebookUrl));
         var imports = ResponsiveGrid(toolbar, 4, 155);
-        FacebookAction(imports, "Import current post", ImportCurrentPostAsync);
+        FacebookAction(imports, "Import posts", ImportFacebookPostsAsync);
+        FacebookAction(actions, "Import current post", ImportCurrentPostAsync);
         FacebookAction(imports, "Open my groups", () =>
         {
             ReadyBrowser().Navigate(FacebookGroups);
