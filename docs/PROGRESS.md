@@ -1,5 +1,9 @@
 # Progres GroupPilot
 
+## 0.00.09 · Import contextual de postari
+
+- [x] Importul de postari alege intre lista profilului si postarea individuala, in functie de pagina deschisa.
+
 ## 0.00.08 · Import de postări
 
 - [x] Importul a până la zece postări afișate într-un profil sau într-o pagină Facebook, cu previzualizare și deduplicare.

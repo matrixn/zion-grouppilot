@@ -1,6 +1,6 @@
 # GroupPilot
 
-**Versiune curentă** `0.00.08`
+**Versiune curentă** `0.00.09`
 
 GroupPilot este o aplicație desktop nativă pentru Windows 11. Pregătești postări, organizezi grupuri Facebook și urmărești local campaniile de distribuire. Trimiterea finală se face manual în interfața Facebook, pentru fiecare grup.
 
@@ -50,6 +50,10 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 
 ## Istoricul versiunilor
 
+### 0.00.09
+
+- [x] Comenzile de import din browser aleg automat fluxul. Pe lista de postari, deschid selectia de pana la zece postari. Pe linkul unei postari individuale, deschid editorul cu datele acelei postari.
+
 ### 0.00.08
 
 - [x] **Facebook Browser → Import posts** preia până la zece postări detectate, în ordinea afișată în fila Posts a unui profil sau a unei pagini Facebook. Verifică selecția și apasă **Save selected**. GroupPilot salvează linkul și textul disponibil în **Post Library**, unde postările pot fi alese pentru campanii.
@@ -95,4 +99,4 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [x] Documentate fundația WinUI 3 inițială, pașii de build și lansare și etapele MVP.
 - [x] Stabilită versiunea de bază `0.00.01`.
 
-La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.08` corespunde metadatelor .NET `0.0.8` și MSIX `0.0.8.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.
+La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.09` corespunde metadatelor .NET `0.0.9` și MSIX `0.0.9.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.

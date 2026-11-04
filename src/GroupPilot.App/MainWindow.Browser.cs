@@ -144,7 +144,8 @@ public sealed partial class MainWindow
         };
         navigation.Children.Add(browserAddress);
         var actions = new StackPanel { Spacing = 4 };
-        var menu = new Button { Content = new SymbolIcon(Symbol.More), Flyout = new Flyout { Content = actions } };
+        var toolsFlyout = new Flyout { Content = actions };
+        var menu = new Button { Content = new SymbolIcon(Symbol.More), Flyout = toolsFlyout };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(menu, "Facebook tools");
         Grid.SetColumn(menu, 5);
         navigation.Children.Add(menu);
@@ -167,8 +168,12 @@ public sealed partial class MainWindow
         });
         FacebookAction(actions, "Open in default browser", () => OpenDefaultBrowserAsync(requestedFacebookUrl));
         var imports = ResponsiveGrid(toolbar, 4, 155);
-        FacebookAction(imports, "Import posts", ImportFacebookPostsAsync);
-        FacebookAction(actions, "Import current post", ImportCurrentPostAsync);
+        FacebookAction(imports, "Import posts", ImportCurrentPostAsync);
+        FacebookAction(actions, "Import current post", () =>
+        {
+            toolsFlyout.Hide();
+            return ImportCurrentPostAsync();
+        });
         FacebookAction(imports, "Open my groups", () =>
         {
             ReadyBrowser().Navigate(FacebookGroups);
@@ -279,8 +284,11 @@ public sealed partial class MainWindow
     private async Task ImportCurrentPostAsync()
     {
         var source = CurrentFacebookPage();
-        if (!Validation.IsFacebookPostUrl(source))
-            throw new ArgumentException("Open a Facebook post permalink first.");
+        if (Validation.FacebookPostImportUrl(source) is null)
+        {
+            await ImportFacebookPostsAsync();
+            return;
+        }
 
         var core = ReadyBrowser();
         var title = core.DocumentTitle;
