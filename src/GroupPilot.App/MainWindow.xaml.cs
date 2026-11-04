@@ -229,7 +229,7 @@ public sealed partial class MainWindow : Window
             var card = Section(summary, label);
             card.Children.Add(new TextBlock { Text = count.ToString(), FontSize = 34 });
         }
-        Metric("Saved posts", model.Posts.Count);
+        Metric("Saved posts", model.Posts.Count(post => !post.IsArchived));
         Metric("Saved groups", model.Groups.Count);
         Metric("Campaigns", model.Campaigns.Count);
 

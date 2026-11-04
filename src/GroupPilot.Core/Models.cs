@@ -48,6 +48,8 @@ public sealed class Post
     public string Body { get; set; } = "";
     public string Url { get; set; } = "";
     public PostKind Kind { get; set; }
+    public string ThumbnailUrl { get; set; } = "";
+    public bool IsArchived { get; set; }
     public List<PostMedia> Media { get; set; } = [];
     public List<PostVariant> Variants { get; set; } = [];
     public override string ToString() => $"{Title} · {Kind}";

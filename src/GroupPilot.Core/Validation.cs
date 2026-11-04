@@ -21,6 +21,10 @@ public static class Validation
             "story.php" or "permalink.php" or "photo" or "photo.php" or "watch");
     }
 
+    public static bool IsFacebookThumbnailUrl(string? value) => Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == "https" && uri.IsDefaultPort && uri.UserInfo.Length == 0
+        && uri.IdnHost.EndsWith(".fbcdn.net", StringComparison.OrdinalIgnoreCase);
+
     public static string? FacebookPostImportUrl(string url)
     {
         if (!IsFacebookPostUrl(url))

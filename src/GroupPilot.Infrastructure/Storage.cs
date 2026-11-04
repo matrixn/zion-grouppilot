@@ -29,25 +29,61 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
     {
         await using var db = await factory.CreateDbContextAsync();
         await using var transaction = await db.Database.BeginTransactionAsync();
-        var known = (await db.Posts.Where(post => post.Kind == PostKind.Existing)
-                .Select(post => post.Url).ToListAsync())
-            .Select(Validation.FacebookPostImportUrl).OfType<string>().ToHashSet();
+        var existing = await db.Posts.Where(post => post.Kind == PostKind.Existing && !post.IsArchived).ToListAsync();
+        var known = existing.Select(post => (Url: Validation.FacebookPostImportUrl(post.Url), Post: post))
+            .Where(entry => entry.Url is not null).GroupBy(entry => entry.Url!)
+            .ToDictionary(group => group.Key, group => group.First().Post);
         var added = 0;
         foreach (var post in posts.Reverse())
         {
             var url = Validation.FacebookPostImportUrl(post.Url);
-            if (url is null || !known.Add(url))
+            if (url is null)
                 continue;
 
-            var draft = new Post { Kind = PostKind.Existing, Url = url, Title = post.Title, Body = post.Body };
+            var image = Validation.IsFacebookThumbnailUrl(post.ThumbnailUrl) ? post.ThumbnailUrl : "";
+            if (known.TryGetValue(url, out var saved))
+            {
+                if (image.Length > 0)
+                    saved.ThumbnailUrl = image;
+                if (string.IsNullOrWhiteSpace(saved.Body) && !string.IsNullOrWhiteSpace(post.Body))
+                    saved.Body = post.Body;
+                continue;
+            }
+
+            var draft = new Post
+            {
+                Kind = PostKind.Existing, Url = url, Title = post.Title, Body = post.Body, ThumbnailUrl = image
+            };
             Validation.CheckPost(draft);
             db.Posts.Add(draft);
+            known.Add(url, draft);
             added++;
         }
 
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
         return added;
+    }
+
+    public async Task DeletePostFromLibraryAsync(int postId)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var post = await db.Posts.Include(item => item.Media).Include(item => item.Variants)
+            .SingleOrDefaultAsync(item => item.Id == postId);
+        if (post is null)
+            return;
+
+        if (await db.Campaigns.AnyAsync(campaign => campaign.PostId == postId))
+            post.IsArchived = true;
+        else
+        {
+            db.Media.RemoveRange(post.Media);
+            db.Variants.RemoveRange(post.Variants);
+            db.Posts.Remove(post);
+        }
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
     }
 
     public Task SavePostAsync(Post post)
@@ -63,6 +99,7 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
 
             var existing = await db.Posts.Include(item => item.Media).Include(item => item.Variants)
                 .SingleAsync(item => item.Id == post.Id);
+            post.IsArchived = existing.IsArchived;
             db.Entry(existing).CurrentValues.SetValues(post);
             db.Media.RemoveRange(existing.Media);
             db.Variants.RemoveRange(existing.Variants);
@@ -229,7 +266,7 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         return SaveAsync(async db =>
         {
             var groups = await db.Groups.Where(group => group.Enabled && groupIds.Contains(group.Id)).ToListAsync();
-            if (groups.Count != groupIds.Count || !await db.Posts.AnyAsync(post => post.Id == postId))
+            if (groups.Count != groupIds.Count || !await db.Posts.AnyAsync(post => post.Id == postId && !post.IsArchived))
                 throw new InvalidOperationException("The selected post or groups have changed. Reload and try again.");
 
             db.Campaigns.Add(new Campaign

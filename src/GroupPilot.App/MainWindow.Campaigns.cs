@@ -27,12 +27,13 @@ public sealed partial class MainWindow
     private async Task CreateCampaignAsync()
     {
         var groups = model.Groups.Where(group => group.Enabled).ToArray();
-        if (model.Posts.Count == 0 || groups.Length == 0)
+        var library = model.Posts.Where(item => !item.IsArchived).ToArray();
+        if (library.Length == 0 || groups.Length == 0)
             throw new ArgumentException("Save a post and enable at least one group first.");
 
         var fields = new StackPanel { Spacing = 10 };
         var name = Input("Campaign name");
-        var post = Choices("Saved post", model.Posts, model.Posts[0]);
+        var post = Choices("Saved post", library, library[0]);
         var targets = List(groups, ListViewSelectionMode.Multiple);
         var date = new CalendarDatePicker { Header = "Planned date (optional)" };
         var time = new TimePicker { Header = "Planned time (local)", SelectedTime = new TimeSpan(9, 0, 0) };

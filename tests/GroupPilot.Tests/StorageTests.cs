@@ -198,6 +198,59 @@ public sealed class StorageTests : IDisposable
         Assert.Equal("Caption", saved[1].Body);
     }
 
+    [Fact]
+    public async Task DeletingLibraryPostsKeepsCampaignReferencesAndRemovesUnusedDrafts()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var used = new Post { Kind = PostKind.New, Title = "Campaign draft", Body = "Content" };
+        var unused = new Post
+        {
+            Kind = PostKind.New, Title = "Unused draft", Body = "Content",
+            Media = [new PostMedia { Path = "preview.jpg" }],
+            Variants = [new PostVariant { Body = "Alternate" }]
+        };
+        await storage.SavePostAsync(used);
+        await storage.SavePostAsync(unused);
+        var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/example/" };
+        await storage.SaveGroupAsync(group, "");
+        await storage.SaveCampaignAsync("Campaign", used.Id, [group.Id], null);
+
+        await storage.DeletePostFromLibraryAsync(unused.Id);
+        await storage.DeletePostFromLibraryAsync(used.Id);
+        await storage.DeletePostFromLibraryAsync(unused.Id);
+        var remaining = await storage.QueryAsync(db => db.Posts.SingleAsync());
+        Assert.Equal(used.Id, remaining.Id);
+        Assert.True(remaining.IsArchived);
+        Assert.Empty(await storage.QueryAsync(db => db.Media.ToListAsync()));
+        Assert.Empty(await storage.QueryAsync(db => db.Variants.ToListAsync()));
+        Assert.Equal(used.Id, await storage.QueryAsync(db => db.Campaigns.Select(item => item.PostId).SingleAsync()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => storage.SaveCampaignAsync("Another", used.Id, [group.Id], null));
+    }
+
+    [Fact]
+    public async Task ReimportRefreshesThumbnailWithoutChangingSavedText()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var original = new Post
+        {
+            Kind = PostKind.Existing, Title = "Edited", Body = "My text",
+            Url = "https://www.facebook.com/example/posts/42"
+        };
+        await storage.SavePostAsync(original);
+        var preview = new Post
+        {
+            Url = original.Url, Title = "Facebook text", Body = "Imported body",
+            ThumbnailUrl = "https://scontent.example.fbcdn.net/photo.jpg"
+        };
+        Assert.Equal(0, await storage.ImportFacebookPostsAsync([preview]));
+        var saved = await storage.QueryAsync(db => db.Posts.SingleAsync());
+        Assert.Equal("My text", saved.Body);
+        Assert.Equal("Edited", saved.Title);
+        Assert.Equal(preview.ThumbnailUrl, saved.ThumbnailUrl);
+    }
+
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
     private sealed class Factory(DbContextOptions<PilotDb> options) : IDbContextFactory<PilotDb>

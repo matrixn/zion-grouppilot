@@ -1,4 +1,7 @@
 using GroupPilot.Core;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Controls;
 using Windows.Storage;
 
@@ -8,28 +11,103 @@ public sealed partial class MainWindow
 {
     private void ShowLibrary()
     {
-        var page = Page("Post Library", "Open a draft, create a remix or review the source on Facebook.");
-        var library = Section(page, "Saved drafts");
-        var posts = List(model.Posts);
-        library.Children.Add(model.Posts.Count == 0 ? Label("No posts yet. Create a draft to get started.") : posts);
-        var actions = ResponsiveGrid(library, 4, 168);
-        Action(actions, "New draft", () => Edit(null), primary: true);
-        Action(actions, "Edit selected draft", () => Edit(SelectedPost(posts)));
-        Action(actions, "Remix selected post", () =>
+        var page = Page("Post Library", "Browse saved posts and choose one to edit, reuse or remove.");
+        Action(page, "New draft", () => Edit(null), primary: true);
+        var saved = model.Posts.Where(post => !post.IsArchived).ToArray();
+        if (saved.Length == 0)
         {
-            var source = SelectedPost(posts);
-            return Edit(new Post
+            page.Children.Add(Label("No posts yet. Create a draft or import posts from Facebook."));
+            return;
+        }
+
+        var cards = ResponsiveGrid(page, 3, 300);
+        foreach (var post in saved)
+        {
+            var card = Section(cards, post.Title);
+            card.Children.Add(CreatePostThumbnail(post));
+            card.Children.Add(Label(post.Kind.ToString()));
+            var text = Label(string.IsNullOrWhiteSpace(post.Body) ? "No text available." : post.Body);
+            text.IsTextSelectionEnabled = true;
+            text.MaxLines = 6;
+            text.TextTrimming = TextTrimming.CharacterEllipsis;
+            card.Children.Add(text);
+
+            var actions = ResponsiveGrid(card, 2, 108);
+            Action(actions, "Edit", () => Edit(post));
+            Action(actions, "Remix", () => Edit(new Post
             {
-                Kind = PostKind.Remix, Title = $"{source.Title} (remix)", Body = source.Body, Url = source.Url,
-                Media = source.Media.Select(media => new PostMedia { Path = media.Path }).ToList(),
-                Variants = source.Variants.Select(variant => new PostVariant { Body = variant.Body }).ToList()
-            });
-        });
-        Action(actions, "Open Facebook post", () => OpenFacebookAsync(SelectedPost(posts).Url));
+                Kind = PostKind.Remix, Title = $"{post.Title} (remix)", Body = post.Body, Url = post.Url,
+                ThumbnailUrl = post.ThumbnailUrl,
+                Media = post.Media.Select(media => new PostMedia { Path = media.Path }).ToList(),
+                Variants = post.Variants.Select(variant => new PostVariant { Body = variant.Body }).ToList()
+            }));
+            if (Validation.IsFacebookUrl(post.Url))
+                Action(actions, "Open in Facebook", () => OpenFacebookAsync(post.Url));
+            Action(actions, "Delete", () => DeleteLibraryPostAsync(post));
+        }
     }
 
-    private static Post SelectedPost(ListView posts) => posts.SelectedItem as Post
-        ?? throw new ArgumentException("Select a saved post first.");
+    private static Grid CreatePostThumbnail(Post post)
+    {
+        var panel = new Grid { Height = 168 };
+        var placeholder = Label("No image available");
+        placeholder.HorizontalAlignment = HorizontalAlignment.Center;
+        placeholder.VerticalAlignment = VerticalAlignment.Center;
+        var image = new Image { Stretch = Stretch.UniformToFill };
+        image.ImageOpened += (_, _) => placeholder.Visibility = Visibility.Collapsed;
+        image.ImageFailed += (_, _) => placeholder.Visibility = Visibility.Visible;
+        panel.Children.Add(placeholder);
+        panel.Children.Add(image);
+
+        if (post.Media.FirstOrDefault() is { } media)
+        {
+            image.Loaded += async (_, _) =>
+            {
+                if (image.Source is not null)
+                    return;
+                try
+                {
+                    var file = await StorageFile.GetFileFromPathAsync(media.Path);
+                    using var stream = await file.OpenReadAsync();
+                    var bitmap = new BitmapImage { DecodePixelWidth = 480 };
+                    await bitmap.SetSourceAsync(stream);
+                    image.Source = bitmap;
+                }
+                catch (Exception ex)
+                {
+                    Serilog.Log.Debug(ex, "Post thumbnail unavailable for {PostId}", post.Id);
+                    SetRemoteThumbnail();
+                }
+            };
+        }
+        else
+        {
+            SetRemoteThumbnail();
+        }
+
+        void SetRemoteThumbnail()
+        {
+            if (Validation.IsFacebookThumbnailUrl(post.ThumbnailUrl))
+                image.Source = new BitmapImage(new Uri(post.ThumbnailUrl)) { DecodePixelWidth = 480 };
+        }
+        return panel;
+    }
+
+    private async Task DeleteLibraryPostAsync(Post post)
+    {
+        var inCampaign = model.Campaigns.Any(campaign => campaign.PostId == post.Id);
+        var message = inCampaign
+            ? "This post is used in a campaign. It will be removed from the library and retained for that campaign."
+            : "This removes the saved copy from GroupPilot. The original Facebook post stays on Facebook.";
+        if (await Dialog($"Delete {post.Title}?", Label(message), "Delete").ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        await storage.DeletePostFromLibraryAsync(post.Id);
+        if (editingPost?.Id == post.Id)
+            editingPost = null;
+        await model.ReloadAsync();
+        ShowLibrary();
+    }
 
     private Task Edit(Post? post)
     {
@@ -81,6 +159,7 @@ public sealed partial class MainWindow
         {
             Id = source?.Id ?? 0, Kind = (PostKind)kind.SelectedItem, Title = title.Text.Trim(),
             Body = body.Text.Trim(), Url = url.Text.Trim(),
+            ThumbnailUrl = source is not null && source.Url == url.Text.Trim() ? source.ThumbnailUrl : "",
             Media = paths.Select(path => new PostMedia { Path = path }).ToList(),
             Variants = string.IsNullOrWhiteSpace(variant.Text) ? [] : [new PostVariant { Body = variant.Text.Trim() }]
         };

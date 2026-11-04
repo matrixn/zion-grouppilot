@@ -1,5 +1,11 @@
 # Progres GroupPilot
 
+## 0.00.12 · Carduri și ștergere din bibliotecă
+
+- [x] Carduri de postare cu text, imagine locală sau miniatură Facebook și acțiuni individuale.
+- [x] Ștergere cu confirmare și arhivare pentru postările folosite în campanii.
+- [ ] Verificarea miniaturilor Facebook dintr-o sesiune autentificată.
+
 ## 0.00.11 · Import din pagini publice Facebook
 
 - [x] Detectarea permalinkurilor directe și a postărilor din carduri fără marcajul anterior.

@@ -17,7 +17,7 @@ public sealed partial class MainWindow
 
         var core = ReadyBrowser();
         var navigation = navigationId;
-        var latest = new Dictionary<string, string>();
+        var latest = new Dictionary<string, FacebookPostRow>();
         var scanTime = System.Diagnostics.Stopwatch.StartNew();
         var stablePasses = 0;
         double previousHeight = -1;
@@ -65,6 +65,7 @@ public sealed partial class MainWindow
                             continue;
 
                         let message = card?.querySelector(messageSelector);
+                        let mediaScope = card;
                         if (!card) {
                             for (let parent = link.parentElement, depth = 0;
                                 parent && parent !== main && depth < 7; parent = parent.parentElement, depth++) {
@@ -73,13 +74,18 @@ public sealed partial class MainWindow
                                     break;
                                 if (messages.length === 1) {
                                     message = messages[0];
+                                    mediaScope = parent;
                                     break;
                                 }
                             }
                         }
                         firstPost ??= card ?? link;
                         seen.add(url.href);
-                        const row = { Url: url.href, Body: (message?.innerText?.trim() ?? '').slice(0, 4000) };
+                        const images = Array.from((mediaScope ?? link).querySelectorAll('img'));
+                        const photo = images.filter(img => img.naturalWidth >= 150 && img.naturalHeight >= 100)
+                            .sort((a, b) => b.naturalWidth * b.naturalHeight - a.naturalWidth * a.naturalHeight)[0];
+                        const image = photo?.currentSrc || photo?.src || mediaScope?.querySelector('video[poster]')?.poster || '';
+                        const row = { Url: url.href, Body: (message?.innerText?.trim() ?? '').slice(0, 4000), Image: image };
                         const previous = card && cards.get(card);
                         const rank = timestamp ? 2 : ownedPost ? 1 : 0;
                         if (previous) {
@@ -118,7 +124,7 @@ public sealed partial class MainWindow
                 foreach (var row in scan.Rows)
                 {
                     if (Validation.FacebookPostImportUrl(row.Url) is { } url)
-                        latest.TryAdd(url, row.Body);
+                        latest.TryAdd(url, row);
                     if (latest.Count == 10)
                         break;
                 }
@@ -137,24 +143,28 @@ public sealed partial class MainWindow
         if (latest.Count == 0)
             throw new ArgumentException("No post links were visible. If Facebook shows a sign-in prompt, sign in here first. Otherwise open the Page's Posts tab and retry.");
 
-        var known = model.Posts.Where(post => post.Kind == PostKind.Existing).Select(post => Validation.FacebookPostImportUrl(post.Url))
-            .OfType<string>().ToHashSet();
-        var drafts = latest.Where(row => !known.Contains(row.Key)).Select(row =>
+        var known = model.Posts.Where(post => post.Kind == PostKind.Existing && !post.IsArchived)
+            .Select(post => (Url: Validation.FacebookPostImportUrl(post.Url), post.ThumbnailUrl, post.Body))
+            .Where(entry => entry.Url is not null).ToLookup(entry => entry.Url!);
+        var drafts = latest.Select(row =>
         {
-            var title = row.Value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
+            var image = Validation.IsFacebookThumbnailUrl(row.Value.Image) ? row.Value.Image : "";
+            var title = row.Value.Body.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
             return new Post
             {
-                Url = row.Key, Kind = PostKind.Existing, Body = row.Value,
+                Url = row.Key, Kind = PostKind.Existing, Body = row.Value.Body, ThumbnailUrl = image,
                 Title = string.IsNullOrWhiteSpace(title) ? "Facebook post" : title[..Math.Min(100, title.Length)]
             };
-        }).ToArray();
+        }).Where(post => !known.Contains(post.Url)
+            || known[post.Url].Any(saved => (post.ThumbnailUrl.Length > 0 && saved.ThumbnailUrl != post.ThumbnailUrl)
+                || (post.Body.Length > 0 && string.IsNullOrWhiteSpace(saved.Body)))).ToArray();
         if (drafts.Length == 0)
             throw new ArgumentException("The detected posts are already in the Post Library.");
 
         var list = List(drafts.Select(post => new FacebookPostChoice(post)).ToArray(), ListViewSelectionMode.Multiple);
         list.SelectAll();
         var content = new StackPanel { Spacing = 10 };
-        content.Children.Add(Label($"Found {latest.Count} posts in feed order. Review the links and select what to save."));
+        content.Children.Add(Label($"Found {latest.Count} posts in feed order. Select posts to save or refresh their preview."));
         content.Children.Add(list);
         var dialog = Dialog("Import Facebook posts", content, "Save selected");
         dialog.PrimaryButtonClick += (_, args) => args.Cancel = list.SelectedItems.Count == 0;
@@ -169,7 +179,7 @@ public sealed partial class MainWindow
 
     private sealed record FacebookPostScan(FacebookPostRow[] Rows, double Height, bool AtBottom);
 
-    private sealed record FacebookPostRow(string Url, string Body);
+    private sealed record FacebookPostRow(string Url, string Body, string Image);
 
     private sealed record FacebookPostChoice(Post Post)
     {

@@ -296,7 +296,7 @@ public sealed partial class MainWindow
         var metadataJson = await core.ExecuteScriptAsync("""
             (() => {
                 const read = name => document.querySelector(`meta[property="${name}"]`)?.content?.trim() ?? "";
-                return { title: read("og:title").slice(0, 300), description: read("og:description").slice(0, 4000) };
+                return { title: read("og:title").slice(0, 300), description: read("og:description").slice(0, 4000), image: read("og:image") };
             })()
             """);
         if (browser?.CoreWebView2 != core || navigationId != loadedNavigation || CurrentFacebookPage() != source)
@@ -311,10 +311,12 @@ public sealed partial class MainWindow
                 title = candidate;
         }
 
+        var image = data.ValueKind == JsonValueKind.Object ? data.GetProperty("image").GetString() : null;
         Activate();
         await Edit(new Post
         {
             Kind = PostKind.Existing, Url = source,
+            ThumbnailUrl = Validation.IsFacebookThumbnailUrl(image) ? image! : "",
             Title = string.IsNullOrWhiteSpace(title) ? "Facebook post" : title.Trim(),
             Body = data.ValueKind == JsonValueKind.Object ? data.GetProperty("description").GetString() ?? "" : ""
         });
