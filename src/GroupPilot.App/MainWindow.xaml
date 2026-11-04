@@ -19,7 +19,6 @@
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Dashboard" Tag="Dashboard" Icon="Home" />
                 <NavigationViewItem Content="Post Library" Tag="Library" Icon="Library" />
-                <NavigationViewItem Content="Post Composer" Tag="Composer" Icon="Edit" />
                 <NavigationViewItem Content="Groups" Tag="Groups" Icon="People" />
                 <NavigationViewItem Content="Campaigns" Tag="Campaigns" Icon="Flag" />
                 <NavigationViewItem Content="Facebook Browser" Tag="Browser" Icon="World" />

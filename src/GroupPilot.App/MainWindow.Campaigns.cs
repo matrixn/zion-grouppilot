@@ -27,9 +27,9 @@ public sealed partial class MainWindow
     private async Task CreateCampaignAsync()
     {
         var groups = model.Groups.Where(group => group.Enabled).ToArray();
-        var library = model.Posts.Where(item => !item.IsArchived).ToArray();
+        var library = model.Posts.Where(IsLibraryPost).ToArray();
         if (library.Length == 0 || groups.Length == 0)
-            throw new ArgumentException("Save a post and enable at least one group first.");
+            throw new ArgumentException("Import a Facebook post and enable at least one group first.");
 
         var fields = new StackPanel { Spacing = 10 };
         var name = Input("Campaign name");
@@ -87,14 +87,21 @@ public sealed partial class MainWindow
         var actions = ResponsiveGrid(targetSection, 3, 180);
         CampaignGroup Selected() => targets.SelectedItem as CampaignGroup ?? throw new ArgumentException("Select a target.");
 
-        Action(actions, "Resume next target", async () =>
+        if (post.Kind == PostKind.Existing && Validation.IsFacebookPostUrl(post.Url))
         {
-            var next = campaign.Targets.Where(CanPublish)
-                .OrderByDescending(target => target.Status == TargetStatus.InProgress).ThenBy(target => target.Id)
-                .FirstOrDefault() ?? throw new ArgumentException("No actionable targets. Record outcomes for targets awaiting approval.");
-            await AssistAsync(campaign.Id, post, next);
-        }, primary: true);
-        Action(actions, "Prepare selected target", () => AssistAsync(campaign.Id, post, Selected()));
+            Action(actions, "Resume next target", async () =>
+            {
+                var next = campaign.Targets.Where(CanPublish)
+                    .OrderByDescending(target => target.Status == TargetStatus.InProgress).ThenBy(target => target.Id)
+                    .FirstOrDefault() ?? throw new ArgumentException("No actionable targets. Record outcomes for targets awaiting approval.");
+                await AssistAsync(campaign.Id, post, next);
+            }, primary: true);
+            Action(actions, "Prepare selected target", () => AssistAsync(campaign.Id, post, Selected()));
+        }
+        else
+        {
+            targetSection.Children.Add(Label("This campaign has no existing Facebook post to share. You can still record its outcomes."));
+        }
         Action(actions, "Record selected outcome", () => RecordOutcomeAsync(campaign, Selected()));
         Action(page, "Back to campaigns", () =>
         {
@@ -118,30 +125,19 @@ public sealed partial class MainWindow
         {
             panel.Children.Add(Label("This target was left in progress. Check Facebook for an existing submission before posting again. If it was already submitted, record its outcome."));
         }
-        panel.Children.Add(Label("Check your account, the group rules and permission to post in Facebook. Paste the copied draft or link and submit manually."));
+        panel.Children.Add(Label("Check your account, the group rules and permission to post in Facebook. Paste the copied Facebook post link and share it manually."));
         panel.Children.Add(Label(group.ReviewedAt is { } reviewed
             ? $"Last manual review: {group.PostingAccess} · {reviewed.ToLocalTime():g}"
             : "Posting access has not been reviewed."));
         if (group.Rules.Length > 0)
             panel.Children.Add(Label($"Group rules: {group.Rules}"));
-        if (post.Media.Count > 0)
-            panel.Children.Add(Label("Local images to attach:\n" + string.Join("\n", post.Media.Select(media => media.Path))));
-        var variant = Choices("Text to copy", new[] { "Main draft" }.Concat(post.Variants.Select(item => item.Body)), "Main draft");
-        if (post.Kind != PostKind.Existing)
-            panel.Children.Add(variant);
         if (await Dialog($"Prepare for {target.GroupName}", new ScrollViewer { Content = panel, MaxHeight = 400 }, "Copy and open").ShowAsync()
             != ContentDialogResult.Primary)
             return;
 
-        var text = post.Kind == PostKind.Existing ? post.Url :
-            string.Join(Environment.NewLine, new[] { variant.SelectedIndex > 0 ? (string)variant.SelectedItem : post.Body, post.Url }
-                .Where(value => !string.IsNullOrWhiteSpace(value)));
-        if (text.Length > 0)
-        {
-            var data = new DataPackage();
-            data.SetText(text);
-            Clipboard.SetContent(data);
-        }
+        var data = new DataPackage();
+        data.SetText(post.Url);
+        Clipboard.SetContent(data);
         await storage.BeginTargetAsync(target.Id);
         await model.ReloadAsync();
         ShowCampaignDetails(model.Campaigns.Single(item => item.Id == campaignId));

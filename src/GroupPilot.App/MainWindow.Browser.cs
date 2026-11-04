@@ -312,14 +312,13 @@ public sealed partial class MainWindow
         }
 
         var image = data.ValueKind == JsonValueKind.Object ? data.GetProperty("image").GetString() : null;
-        Activate();
-        await Edit(new Post
+        await PreviewFacebookPostsAsync([new Post
         {
             Kind = PostKind.Existing, Url = source,
             ThumbnailUrl = Validation.IsFacebookThumbnailUrl(image) ? image! : "",
             Title = string.IsNullOrWhiteSpace(title) ? "Facebook post" : title.Trim(),
             Body = data.ValueKind == JsonValueKind.Object ? data.GetProperty("description").GetString() ?? "" : ""
-        });
+        }], "Review the existing Facebook post before saving it to the library.");
     }
 
     private static bool IsMyGroupsPage(string? url) =>

@@ -13,7 +13,6 @@ public sealed partial class MainWindow : Window
     private readonly Storage storage;
     private readonly PilotViewModel model;
     private bool initialized;
-    private Post? editingPost;
 
     public MainWindow(Storage storage, PilotViewModel model)
     {
@@ -98,7 +97,6 @@ public sealed partial class MainWindow : Window
         {
             case "Dashboard": ShowDashboard(); break;
             case "Library": ShowLibrary(); break;
-            case "Composer": ShowComposer(editingPost); break;
             case "Groups": ShowGroups(); break;
             case "Campaigns": ShowCampaigns(); break;
             case "Browser": ShowBrowser(); break;
@@ -229,14 +227,14 @@ public sealed partial class MainWindow : Window
             var card = Section(summary, label);
             card.Children.Add(new TextBlock { Text = count.ToString(), FontSize = 34 });
         }
-        Metric("Saved posts", model.Posts.Count(post => !post.IsArchived));
+        Metric("Saved posts", model.Posts.Count(IsLibraryPost));
         Metric("Saved groups", model.Groups.Count);
         Metric("Campaigns", model.Campaigns.Count);
 
         var workspace = Section(page, "Quick actions");
-        workspace.Children.Add(Label("Start a draft or open one of your workspaces."));
+        workspace.Children.Add(Label("Import existing Facebook posts or manage your groups and campaigns."));
         var actions = ResponsiveGrid(workspace, 3, 168);
-        Action(actions, "Compose a post", () => Edit(null), primary: true);
+        Action(actions, "Open Facebook Browser", () => OpenPage("Browser"), primary: true);
         Action(actions, "Manage groups", () => OpenPage("Groups"));
         Action(actions, "View campaigns", () => OpenPage("Campaigns"));
     }

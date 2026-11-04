@@ -146,7 +146,7 @@ public sealed partial class MainWindow
         var known = model.Posts.Where(post => post.Kind == PostKind.Existing && !post.IsArchived)
             .Select(post => (Url: Validation.FacebookPostImportUrl(post.Url), post.ThumbnailUrl, post.Body))
             .Where(entry => entry.Url is not null).ToLookup(entry => entry.Url!);
-        var drafts = latest.Select(row =>
+        var posts = latest.Select(row =>
         {
             var image = Validation.IsFacebookThumbnailUrl(row.Value.Image) ? row.Value.Image : "";
             var title = row.Value.Body.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim();
@@ -158,13 +158,18 @@ public sealed partial class MainWindow
         }).Where(post => !known.Contains(post.Url)
             || known[post.Url].Any(saved => (post.ThumbnailUrl.Length > 0 && saved.ThumbnailUrl != post.ThumbnailUrl)
                 || (post.Body.Length > 0 && string.IsNullOrWhiteSpace(saved.Body)))).ToArray();
-        if (drafts.Length == 0)
+        if (posts.Length == 0)
             throw new ArgumentException("The detected posts are already in the Post Library.");
 
-        var list = List(drafts.Select(post => new FacebookPostChoice(post)).ToArray(), ListViewSelectionMode.Multiple);
+        await PreviewFacebookPostsAsync(posts, $"Found {latest.Count} posts in feed order. Select posts to save or refresh their preview.");
+    }
+
+    private async Task PreviewFacebookPostsAsync(Post[] posts, string description)
+    {
+        var list = List(posts.Select(post => new FacebookPostChoice(post)).ToArray(), ListViewSelectionMode.Multiple);
         list.SelectAll();
         var content = new StackPanel { Spacing = 10 };
-        content.Children.Add(Label($"Found {latest.Count} posts in feed order. Select posts to save or refresh their preview."));
+        content.Children.Add(Label(description));
         content.Children.Add(list);
         var dialog = Dialog("Import Facebook posts", content, "Save selected");
         dialog.PrimaryButtonClick += (_, args) => args.Cancel = list.SelectedItems.Count == 0;
@@ -172,7 +177,7 @@ public sealed partial class MainWindow
             return;
 
         var selected = list.SelectedItems.Cast<FacebookPostChoice>().Select(choice => choice.Post).ToHashSet();
-        await storage.ImportFacebookPostsAsync(drafts.Where(selected.Contains).ToArray());
+        await storage.ImportFacebookPostsAsync(posts.Where(selected.Contains).ToArray());
         await model.ReloadAsync();
         NavigateTo("Library");
     }

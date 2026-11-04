@@ -1,5 +1,10 @@
 # Progres GroupPilot
 
+## 0.00.13 · Distribuire din biblioteca Facebook
+
+- [x] Interfață concentrată pe importul și distribuirea postărilor existente pe Facebook.
+- [x] Imagini mai mari, afișate integral în carduri.
+
 ## 0.00.12 · Carduri și ștergere din bibliotecă
 
 - [x] Carduri de postare cu text, imagine locală sau miniatură Facebook și acțiuni individuale.
