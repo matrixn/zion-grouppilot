@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GroupPilot.Core;
+using GroupPilot.Infrastructure;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
@@ -24,6 +25,8 @@ public sealed partial class MainWindow
     private bool pageLoaded;
     private ulong navigationId;
     private bool browserReady;
+    private int browserDebugPort;
+    private bool allowAssistedPreparation = true;
     private bool sessionConfirmed;
     private string requestedFacebookUrl = FacebookHome;
     private SocialGroup? reviewGroup;
@@ -39,7 +42,7 @@ public sealed partial class MainWindow
     }
 
     private async Task OpenFacebookAsync(string url, SocialGroup? group = null,
-        (int CampaignId, int TargetId)? target = null, bool keepCurrentPage = false)
+        (int CampaignId, int TargetId)? target = null, bool keepCurrentPage = false, bool navigate = true, bool assisted = true)
     {
         if (!Validation.IsFacebookUrl(url))
             throw new ArgumentException("Enter an HTTPS Facebook URL.");
@@ -52,8 +55,12 @@ public sealed partial class MainWindow
             browserStatus!.Text = "Starting the local Facebook profile…";
             try
             {
+                browserDebugPort = WebViewAutomationConnection.FindLoopbackPort();
                 var environment = await CoreWebView2Environment.CreateWithOptionsAsync(
-                    null, Path.Combine(App.DataDirectory, "browser"), new CoreWebView2EnvironmentOptions());
+                    null, Path.Combine(App.DataDirectory, "browser"), new CoreWebView2EnvironmentOptions
+                    {
+                        AdditionalBrowserArguments = $"--remote-debugging-address=127.0.0.1 --remote-debugging-port={browserDebugPort}"
+                    });
                 if (browser != view)
                     return;
                 await view.EnsureCoreWebView2Async(environment);
@@ -78,6 +85,7 @@ public sealed partial class MainWindow
         requestedFacebookUrl = url;
         reviewGroup = group;
         publishingTarget = target;
+        allowAssistedPreparation = assisted;
         reviewButton!.IsEnabled = group is not null;
         outcomeButton!.IsEnabled = target is not null;
         outcomeButton.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
@@ -97,8 +105,11 @@ public sealed partial class MainWindow
         browserContext!.Text = target is not null ? $"Campaign target · {group?.Name} · Submit manually, then record the outcome." :
             group is not null ? $"Group review · {group.Name}" :
             "Browse Facebook or import a post from its permalink.";
-        pageLoaded = false;
-        view.CoreWebView2.Navigate(url);
+        if (navigate)
+        {
+            pageLoaded = false;
+            view.CoreWebView2.Navigate(url);
+        }
     }
 
     private static async Task OpenDefaultBrowserAsync(string url)
@@ -185,6 +196,7 @@ public sealed partial class MainWindow
             return Task.CompletedTask;
         });
         FacebookAction(actions, "Open in default browser", () => OpenDefaultBrowserAsync(requestedFacebookUrl));
+        FacebookAction(actions, "Check publishing connection", CheckPublishingConnectionAsync);
         var imports = ResponsiveGrid(toolbar, 4, 155);
         browserImports = imports;
         FacebookAction(imports, "Import posts", ImportCurrentPostAsync);
@@ -319,7 +331,7 @@ public sealed partial class MainWindow
             }
             else
             {
-                if (publishingTarget is not null && reviewGroup is not null && Validation.IsSameFacebookGroup(reviewGroup.Url, source))
+                if (allowAssistedPreparation && publishingTarget is not null && reviewGroup is not null && Validation.IsSameFacebookGroup(reviewGroup.Url, source))
                     _ = TryPrepareShareAfterNavigationAsync(view);
                 browserStatus!.Text = sessionConfirmed ? "Using the Facebook session you confirmed." :
                     "If your account is already signed in, choose Continue with this session.";

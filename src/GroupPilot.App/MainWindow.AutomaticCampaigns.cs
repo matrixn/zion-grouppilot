@@ -43,6 +43,9 @@ public sealed partial class MainWindow
         {
             // Remove the ownership guard before controls are re-enabled. No queued progress may replace the final result.
             automaticCampaign = null;
+            automationConnection?.Dispose();
+            automationConnection = null;
+            automationPage = null;
             cancellation.Dispose();
             if (stopCampaignButton is not null)
                 stopCampaignButton.Visibility = Visibility.Collapsed;
@@ -71,12 +74,11 @@ public sealed partial class MainWindow
         sharingBanner.IsOpen = true;
     }
 
-    private async Task<PublicationResult> PublishInFacebookAsync(CampaignPublication publication, Func<Task> beforeSubmit,
-        CancellationToken cancellationToken)
+    private async Task<PlaywrightGroupPublisher> CreatePublisherAsync(CampaignPublication publication)
     {
         var group = model.Groups.Single(item => item.Id == model.Campaigns.Single(item => item.Id == publication.CampaignId)
             .Targets.Single(item => item.Id == publication.TargetId).SocialGroupId);
-        await OpenFacebookAsync(publication.GroupUrl, group, (publication.CampaignId, publication.TargetId));
+        await OpenFacebookAsync(publication.GroupUrl, group, (publication.CampaignId, publication.TargetId), navigate: false, assisted: false);
         var view = browser!;
         view.IsHitTestVisible = false;
         if (browserNavigation is not null)
@@ -85,72 +87,52 @@ public sealed partial class MainWindow
         prepareShareButton!.IsEnabled = false;
         outcomeButton!.IsEnabled = false;
         stopCampaignButton!.Visibility = Visibility.Visible;
-        var token = Guid.NewGuid().ToString("N");
-        var checkpoint = false;
-
-        PublicationResult Stop(string message) => new(checkpoint ? TargetStatus.NeedsReview : TargetStatus.Failed, message);
-        async Task<BrowserPublicationState> Inspect(string operation)
+        var page = await GetPublishingPageAsync();
+        return new PlaywrightGroupPublisher(page, stage =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (browser != view || publishingTarget != (publication.CampaignId, publication.TargetId))
-                throw new ArgumentException("The campaign browser changed.");
-            var source = view.CoreWebView2.Source;
-            if (Validation.IsFacebookLoginPage(source))
-                return new("authentication", "Sign in or complete Facebook's security check before resuming.", "");
-            if (!Validation.IsSameFacebookGroup(publication.GroupUrl, source))
-                return new("wrong-page", "Facebook navigated away from the selected group. The campaign stopped.", "");
-            var request = JsonSerializer.Serialize(new { operation, token, groupUrl = publication.GroupUrl, postUrl = publication.PostUrl });
-            var json = await view.CoreWebView2.ExecuteScriptAsync(FacebookPublishingScript.Source + $"({request})");
-            return JsonSerializer.Deserialize<BrowserPublicationState>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                ?? throw new ArgumentException("Facebook did not return a publication state.");
-        }
-
-        // Navigation, dynamic composer loading and confirmation each have bounded waits.
-        for (var pass = 0; !pageLoaded; pass++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (pass >= 90)
-                return Stop("Facebook did not finish loading. Nothing was submitted.");
-            await Task.Delay(500, cancellationToken);
-        }
-        BrowserPublicationState state = new("loading", "", "");
-        for (var pass = 0; pass < 60; pass++)
-        {
-            state = await Inspect("prepare");
-            if (state.Status == "ready")
-                break;
-            if (state.Status is not ("loading" or "opening" or "waiting"))
-                return Stop(state.Message);
-            await Task.Delay(500, cancellationToken);
-        }
-        if (state.Status != "ready")
-            return Stop("The group editor was not ready within 30 seconds. Nothing was submitted.");
-        cancellationToken.ThrowIfCancellationRequested();
-        await beforeSubmit();
-        checkpoint = true;
-        state = await Inspect("submit");
-        if (state.Status != "submitted")
-            return Stop(state.Message.Length > 0 ? state.Message : "Submission was not confirmed. Check Facebook before retrying.");
-        ShowAutomaticStatus(publication.GroupName, "Submitted once · waiting for Facebook confirmation…", InfoBarSeverity.Informational);
-        for (var pass = 0; pass < 60; pass++)
-        {
-            await Task.Delay(500, cancellationToken);
-            state = await Inspect("observe");
-            if (state.Status == "published")
-                return new(TargetStatus.Published, state.Message, state.Url);
-            if (state.Status == "approval")
-                return new(TargetStatus.AwaitingApproval, state.Message);
-            if (state.Status != "waiting")
-                return Stop(state.Message);
-        }
-        return Stop("Facebook did not confirm publication within 30 seconds. Check the group before retrying; the post will not be submitted again automatically.");
+            Serilog.Log.Information("Campaign target {TargetId}: {Stage}", publication.TargetId, stage);
+            if (!stage.Contains(" · page=", StringComparison.Ordinal) && !stage.Contains(" · Playwright", StringComparison.Ordinal))
+                ShowAutomaticStatus(publication.GroupName, stage, InfoBarSeverity.Informational);
+        });
     }
 
-    private sealed record BrowserPublicationState(string Status, string Message, string Url);
+    private WebViewAutomationConnection? automationConnection;
+    private Microsoft.Playwright.IPage? automationPage;
 
-    private sealed class CampaignBrowser(MainWindow window) : ICampaignBrowser
+    private async Task<string> GetBrowserTargetIdAsync()
     {
-        public Task<PublicationResult> PublishAsync(CampaignPublication publication, Func<Task> beforeSubmit, CancellationToken cancellationToken) =>
-            window.PublishInFacebookAsync(publication, beforeSubmit, cancellationToken);
+        var json = await ReadyBrowser().CallDevToolsProtocolMethodAsync("Target.getTargetInfo", "{}");
+        using var data = JsonDocument.Parse(json);
+        return data.RootElement.GetProperty("targetInfo").GetProperty("targetId").GetString()
+            ?? throw new ArgumentException("The browser did not expose its target ID.");
+    }
+
+    private async Task<Microsoft.Playwright.IPage> GetPublishingPageAsync()
+    {
+        if (automationPage is { IsClosed: false })
+            return automationPage;
+        automationConnection?.Dispose();
+        automationConnection = new WebViewAutomationConnection();
+        automationPage = await automationConnection.ConnectAsync(browserDebugPort, await GetBrowserTargetIdAsync());
+        return automationPage;
+    }
+
+    private async Task CheckPublishingConnectionAsync()
+    {
+        using var connection = new WebViewAutomationConnection();
+        var page = await connection.ConnectAsync(browserDebugPort, await GetBrowserTargetIdAsync());
+        if (page.IsClosed)
+            throw new ArgumentException("The embedded browser is closed.");
+        browserStatus!.Text = "Playwright connected to this embedded Facebook browser. No post was submitted.";
+        Serilog.Log.Information("Playwright connection verified for the embedded Facebook WebView");
+    }
+
+    private sealed class CampaignBrowser(MainWindow window) : ICampaignBrowser, ICampaignResultVerifier
+    {
+        public async Task<PublicationResult> PublishAsync(CampaignPublication publication, Func<Task> beforeSubmit, CancellationToken cancellationToken) =>
+            await (await window.CreatePublisherAsync(publication)).PublishAsync(publication, beforeSubmit, cancellationToken);
+
+        public async Task<PublicationResult?> VerifyAsync(CampaignPublication publication, DateTimeOffset submittedAt, CancellationToken cancellationToken) =>
+            await (await window.CreatePublisherAsync(publication)).VerifyAsync(publication, submittedAt, cancellationToken);
     }
 }

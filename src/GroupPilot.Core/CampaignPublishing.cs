@@ -12,17 +12,23 @@ public interface ICampaignBrowser
         CancellationToken cancellationToken);
 }
 
+public interface ICampaignResultVerifier
+{
+    // Read-only recovery: never press Publish while checking an earlier submission.
+    Task<PublicationResult?> VerifyAsync(CampaignPublication publication, DateTimeOffset submittedAt, CancellationToken cancellationToken);
+}
+
 public sealed record CampaignRunProgress(int Completed, int Total, string GroupName, string Message);
 public sealed record CampaignRunResult(bool Completed, string Message);
 
-public static class FacebookPublishingScript
+public static class FacebookPageSnapshotScript
 {
     public static string Source { get; } = Read();
 
     private static string Read()
     {
-        using var stream = typeof(FacebookPublishingScript).Assembly
-            .GetManifestResourceStream("GroupPilot.Core.FacebookPublishing.js")!;
+        using var stream = typeof(FacebookPageSnapshotScript).Assembly
+            .GetManifestResourceStream("GroupPilot.Core.FacebookPageSnapshot.js")!;
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }

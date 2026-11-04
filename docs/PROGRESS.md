@@ -1,5 +1,15 @@
 # Progres GroupPilot
 
+## 0.00.20 · Playwright în browserul integrat
+
+- [x] Clicuri și completare Playwright pe controalele identificate unic în WebView2; autentificarea rămâne în profilul existent.
+- [x] Verificare pe etape, confirmare/permalink, reîncărcarea grupului și recuperare a unei trimiteri anterioare fără retrimitere.
+- [x] 56 de teste xUnit, 12 teste DOM și 10 scenarii native Playwright/WebView2 locale, fără cereri Facebook.
+- [x] Build x64 final fără erori sau avertismente; modelul EF corespunde migrărilor existente.
+- [x] Fereastră Windows 0.00.20 verificată; sesiunea Facebook existentă încărcată și Check publishing connection confirmat în aplicație, fără publicare.
+- [ ] Publicare și măsurarea fiabilității pe grupuri Facebook reale.
+
+
 ## 0.00.19 · Publicare automată în browser
 
 - [x] Rulare secvențială prin WebView2, fără copy/paste sau confirmare pentru fiecare grup.

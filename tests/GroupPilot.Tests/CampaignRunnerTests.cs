@@ -149,6 +149,54 @@ public sealed class CampaignRunnerTests : IDisposable
         Assert.True((await new CampaignRunner(store, browser, clock, Delay).RunAsync(id, 1, null, default)).Completed);
     }
 
+    [Fact]
+    public async Task RecoveryRecordsExistingPostAndOnlyPublishesRemainingGroups()
+    {
+        var (store, id) = await SetupAsync();
+        var targetId = await store.QueryAsync(db => db.Targets.OrderBy(target => target.Id).Select(target => target.Id).FirstAsync());
+        await store.BeginTargetAsync(targetId, 1);
+        await store.MarkAutomaticSubmissionAsync(targetId, 1);
+        await store.RecordAutomaticOutcomeAsync(targetId, 1, new(TargetStatus.NeedsReview, "No confirmation."));
+        var browser = new VerifyingBrowser(true);
+        Assert.True((await new CampaignRunner(store, browser, clock, Delay).RunAsync(id, 1, null, default)).Completed);
+        Assert.Equal(1, browser.Verifications);
+        Assert.Equal(1, browser.Publications);
+        Assert.All(await store.QueryAsync(db => db.Targets.ToArrayAsync()), target => Assert.Equal(TargetStatus.Published, target.Status));
+        Assert.Equal(3, await store.QueryAsync(db => db.Attempts.CountAsync()));
+    }
+
+    [Fact]
+    public async Task UnconfirmedRecoveryDoesNotSubmitOrClearNeedsReview()
+    {
+        var (store, id) = await SetupAsync();
+        var targetId = await store.QueryAsync(db => db.Targets.OrderBy(target => target.Id).Select(target => target.Id).FirstAsync());
+        await store.BeginTargetAsync(targetId, 1);
+        await store.MarkAutomaticSubmissionAsync(targetId, 1);
+        await store.RecordAutomaticOutcomeAsync(targetId, 1, new(TargetStatus.NeedsReview, "No confirmation."));
+        var browser = new VerifyingBrowser(false);
+        Assert.False((await new CampaignRunner(store, browser, clock, Delay).RunAsync(id, 1, null, default)).Completed);
+        Assert.Equal(1, browser.Verifications);
+        Assert.Equal(0, browser.Publications);
+        Assert.Equal(TargetStatus.NeedsReview, await store.QueryAsync(db => db.Targets.Where(target => target.Id == targetId).Select(target => target.Status).SingleAsync()));
+    }
+
+    private sealed class VerifyingBrowser(bool found) : ICampaignBrowser, ICampaignResultVerifier
+    {
+        public int Verifications { get; private set; }
+        public int Publications { get; private set; }
+        public Task<PublicationResult?> VerifyAsync(CampaignPublication publication, DateTimeOffset submittedAt, CancellationToken cancellationToken)
+        {
+            Verifications++;
+            return Task.FromResult<PublicationResult?>(found ? new(TargetStatus.Published, "Found the previous group post.", publication.GroupUrl + "posts/456/") : null);
+        }
+        public async Task<PublicationResult> PublishAsync(CampaignPublication publication, Func<Task> beforeSubmit, CancellationToken cancellationToken)
+        {
+            Publications++;
+            await beforeSubmit();
+            return new(TargetStatus.Published, "Facebook confirmed publication.");
+        }
+    }
+
     private sealed class Browser(Func<CampaignPublication, Func<Task>, CancellationToken, Task<PublicationResult>> publish) : ICampaignBrowser
     {
         public Task<PublicationResult> PublishAsync(CampaignPublication publication, Func<Task> beforeSubmit, CancellationToken cancellationToken) => publish(publication, beforeSubmit, cancellationToken);

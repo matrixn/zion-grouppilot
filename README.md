@@ -1,6 +1,6 @@
 # GroupPilot
 
-**Versiune curentă** `0.00.19`
+**Versiune curentă** `0.00.20`
 
 GroupPilot este o aplicație desktop nativă pentru Windows 11. Importă postări Facebook, organizează grupurile și pornește campanii de distribuire automată în browserul integrat. Autentificarea rămâne în Facebook.
 
@@ -40,9 +40,9 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 3. În **Groups**, selectează un grup și apasă **Review in Facebook**. Verifică regulile și dreptul contului de a posta, apoi folosește **Record group review** pentru a salva observațiile și data verificării. Accesul poate varia în funcție de cont și în timp.
 4. Din campanie, alege **Run campaign now**. GroupPilot deschide pe rând grupurile selectate, introduce linkul și apasă **Post/Publică**. Salvează rezultatul pe baza unei confirmări vizibile Facebook sau a unei postări noi corelate cu sursa și un marcaj temporal recent. Dispariția editorului nu confirmă publicarea. **Stop campaign** oprește următoarele acțiuni. Păstrează aplicația deschisă.
 5. Rezultatele automate sunt salvate în Publishing History cu dovada observată și URL-ul publicat când Facebook îl expune. **AwaitingApproval** înseamnă trimitere spre moderare. **NeedsReview** cere verificarea Facebook și înregistrarea manuală a rezultatului prin **Record campaign outcome** sau **Record selected outcome**. Pentru Published înregistrat manual este necesar URL-ul postării.
-6. După o întrerupere, redeschide campania. Țintele InProgress și NeedsReview blochează retrimiterea automată până la verificare. Dacă postarea nu a fost trimisă, înregistrează Failed pentru a permite o reîncercare explicită; dacă există deja, înregistrează Published sau AwaitingApproval. Grupurile finalizate nu sunt repetate în aceeași rundă. **Prepare selected target** păstrează fluxul asistat pentru intervenții punctuale.
+6. După o întrerupere, redeschide campania. Țintele InProgress și NeedsReview cu marcaj de trimitere sunt reverificate mai întâi, fără un nou clic pe Publică. Dacă este identificată postarea cu sursa și data potrivite, rezultatul este recuperat și campania continuă. Dacă nu, retrimiterea rămâne blocată până la verificare. Dacă postarea nu a fost trimisă, înregistrează Failed pentru a permite o reîncercare explicită; dacă există deja, înregistrează Published sau AwaitingApproval. Grupurile finalizate nu sunt repetate în aceeași rundă. **Prepare selected target** păstrează fluxul asistat pentru intervenții punctuale.
 
-Automatizarea folosește interfața Facebook, fără API privat, export de cookie-uri sau backend. Pauza este o setare de ritm, nu o garanție împotriva restricțiilor. Programările declanșează notificări; campania pornește prin Run campaign now.
+Automatizarea folosește Playwright .NET și interfața Facebook din WebView2, fără API privat, export de cookie-uri sau backend. Driverul Playwright este inclus prin NuGet; nu este necesară instalarea unui Chromium separat. Conexiunea CDP folosește un port efemer pe 127.0.0.1 și selectează exclusiv ID-ul WebView-ului aplicației. Din meniul browserului (**…**), **Check publishing connection** verifică această conexiune fără publicare. Pauza este o setare de ritm, nu o garanție împotriva restricțiilor. Programările declanșează notificări; campania pornește prin Run campaign now.
 
 Pentru testele DOM locale (Node.js 20.19+):
 
@@ -65,6 +65,17 @@ dotnet run --project tests/GroupPilot.BrowserSmoke
 - [ ] Verifică afișarea notificării Windows și lansarea pe x86 și ARM64.
 
 ## Istoricul versiunilor
+
+### 0.00.20
+
+- [x] Interacțiuni Playwright .NET 1.64.1 în același WebView2: completare și clicuri cu verificarea vizibilității, stabilității și disponibilității controalelor.
+- [x] Așteptarea editorului încărcat dinamic; mesaje pe etape și diagnostic cu numărul de controale identificate în logurile locale.
+- [x] Verificarea confirmării și a permalinkului nou corelat cu postarea-sursă și data trimiterii; o reîncărcare a grupului dacă editorul s-a închis fără rezultat clar.
+- [x] Reverificarea fără retrimitere a încercărilor NeedsReview/InProgress care au un marcaj de trimitere persistent.
+- [x] Check publishing connection în meniul browserului, fără trimiterea unei postări. Conexiune locală la ținta exactă a WebView-ului.
+- [x] 56 de teste xUnit, 12 teste DOM și 10 scenarii locale Playwright/WebView2: confirmare, moderare, feed, reîncărcare, editor întârziat, buton dezactivat temporar, draft ocupat, restricție, rezultat incert și recuperare fără clic.
+- [x] Build x64 și conexiune Playwright verificate în aplicația Windows 0.00.20, folosind sesiunea Facebook existentă, fără publicare reală.
+- [ ] Măsurarea ratei de succes pe grupuri Facebook reale. Testele locale nu demonstrează fiabilitatea pe toate variantele interfeței Facebook.
 
 ### 0.00.19
 
@@ -183,4 +194,4 @@ dotnet run --project tests/GroupPilot.BrowserSmoke
 - [x] Documentate fundația WinUI 3 inițială, pașii de build și lansare și etapele MVP.
 - [x] Stabilită versiunea de bază `0.00.01`.
 
-La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.19` corespunde metadatelor .NET `0.0.19` și MSIX `0.0.19.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.
+La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.20` corespunde metadatelor .NET `0.0.20` și MSIX `0.0.20.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.

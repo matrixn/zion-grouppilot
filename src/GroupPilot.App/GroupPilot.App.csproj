@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <Version>0.0.19</Version>
+    <Version>0.0.20</Version>
     <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>GroupPilot_App</RootNamespace>
@@ -78,4 +78,10 @@
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
+  <Target Name="ExcludePlaywrightDriverFromPriIndex" BeforeTargets="_GenerateProjectPriConfigurationFiles">
+    <!-- Driver files are ordinary packaged files, not localized WinUI resources. -->
+    <ItemGroup>
+      <PriOutputs Remove="@(PriOutputs)" Condition="$([System.String]::Copy('%(PriOutputs.TargetPath)').StartsWith('.playwright'))" />
+    </ItemGroup>
+  </Target>
 </Project>

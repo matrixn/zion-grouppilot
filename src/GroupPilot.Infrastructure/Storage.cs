@@ -486,11 +486,19 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         return RecordAttemptCoreAsync(targetId, result.Status, result.PublishedUrl, runNumber, result.Evidence);
     }
 
+    public Task RecordVerifiedOutcomeAsync(int targetId, int runNumber, PublicationResult result)
+    {
+        if (result.Status is not (TargetStatus.Published or TargetStatus.AwaitingApproval)
+            || string.IsNullOrWhiteSpace(result.Evidence) || result.Evidence.Length > 1000)
+            throw new ArgumentException("Verification requires a confirmed outcome and evidence.");
+        return RecordAttemptCoreAsync(targetId, result.Status, result.PublishedUrl, runNumber, result.Evidence, verification: true);
+    }
+
     public Task RecordAttemptAsync(int targetId, TargetStatus status, string publishedUrl, int? expectedRunNumber = null) =>
         RecordAttemptCoreAsync(targetId, status, publishedUrl, expectedRunNumber);
 
     private async Task RecordAttemptCoreAsync(int targetId, TargetStatus status, string publishedUrl,
-        int? expectedRunNumber, string? evidence = null)
+        int? expectedRunNumber, string? evidence = null, bool verification = false)
     {
         var automatic = evidence is not null;
         if (status is not (TargetStatus.Published or TargetStatus.Failed or TargetStatus.Skipped or TargetStatus.AwaitingApproval or TargetStatus.NeedsReview)
@@ -508,7 +516,7 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         var target = await db.Targets.FindAsync(targetId) ?? throw new InvalidOperationException("Target unavailable.");
         if (target.Status is TargetStatus.Published or TargetStatus.Skipped)
             throw new InvalidOperationException("This target is already closed.");
-        if (automatic && (target.Status != TargetStatus.InProgress
+        if (automatic && ((target.Status != TargetStatus.InProgress && !(verification && target.Status == TargetStatus.NeedsReview))
             || (status != TargetStatus.Failed && target.SubmissionStartedAt is null)
             || (status == TargetStatus.Failed && target.SubmissionStartedAt is not null)))
             throw new InvalidOperationException("The automatic result does not match the durable submission checkpoint.");

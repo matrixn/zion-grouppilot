@@ -38,6 +38,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             automaticCampaign?.Cancel();
+            automationConnection?.Dispose();
             campaignReminderTimer?.Stop();
             var view = browser;
             browser = null;

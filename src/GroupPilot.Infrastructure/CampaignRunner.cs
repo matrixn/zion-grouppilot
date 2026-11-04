@@ -29,7 +29,21 @@ public sealed class CampaignRunner(Storage storage, ICampaignBrowser browser, Ti
                 continue;
             }
             if (target.Status is TargetStatus.InProgress or TargetStatus.NeedsReview || target.SubmissionStartedAt is not null)
+            {
+                if (target.SubmissionStartedAt is { } submittedAt && browser is ICampaignResultVerifier verifier)
+                {
+                    var savedPost = await storage.QueryAsync(db => db.Posts.AsNoTracking().SingleAsync(post => post.Id == campaign.PostId));
+                    progress?.Report(new(completed, ids.Length, target.GroupName, "Checking the previous submission in the group. It will not be submitted again."));
+                    var found = await verifier.VerifyAsync(new(campaignId, id, runNumber, target.GroupUrl, target.GroupName, savedPost.Url), submittedAt, cancellationToken);
+                    if (found?.Status is TargetStatus.Published or TargetStatus.AwaitingApproval)
+                    {
+                        await storage.RecordVerifiedOutcomeAsync(id, runNumber, found);
+                        completed++;
+                        continue;
+                    }
+                }
                 return new(false, $"Check the previous submission to {target.GroupName} and record its outcome before resuming. It will not be submitted again automatically.");
+            }
 
             while (await storage.GetNextShareAtAsync(target.GroupUrl) is { } next && next > clock.GetUtcNow())
             {

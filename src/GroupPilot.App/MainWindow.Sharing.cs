@@ -13,7 +13,7 @@ public sealed partial class MainWindow
     private async Task TryPrepareShareAfterNavigationAsync(WebView2 view)
     {
         await Task.Delay(800);
-        if (browser != view || publishingTarget is null || automaticCampaign is not null)
+        if (browser != view || publishingTarget is null || automaticCampaign is not null || !allowAssistedPreparation)
             return;
         try
         {

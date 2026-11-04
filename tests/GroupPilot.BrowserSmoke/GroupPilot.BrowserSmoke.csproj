@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/GroupPilot.Core/GroupPilot.Core.csproj" />
+    <ProjectReference Include="../../src/GroupPilot.Infrastructure/GroupPilot.Infrastructure.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3719.77" />
   </ItemGroup>
   <Target Name="UseOnlyWinFormsWebView" BeforeTargets="ResolveAssemblyReferences">
