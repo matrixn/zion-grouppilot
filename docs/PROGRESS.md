@@ -1,5 +1,11 @@
 # Progres GroupPilot
 
+## 0.00.15 · Carduri de grup și ștergere de campanii
+
+- [x] Carduri cu miniaturi de grup, intervale generate din date și sortare după membri.
+- [x] Ștergere de campanie cu păstrarea istoricului și a rezultatelor.
+- [ ] Verificarea vizuală cu imagini dintr-o sesiune Facebook autentificată.
+
 ## 0.00.14 · Rulare imediată și selector vizual
 
 - [x] Pornire imediată din lista de campanii, din detalii sau după salvare, cu trecere la următorul grup după înregistrarea rezultatului.

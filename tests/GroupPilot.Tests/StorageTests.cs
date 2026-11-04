@@ -251,6 +251,48 @@ public sealed class StorageTests : IDisposable
         Assert.Equal(preview.ThumbnailUrl, saved.ThumbnailUrl);
     }
 
+    [Fact]
+    public async Task RemovingCampaignPreservesHistoryAndPreventsFurtherRuns()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/example/" };
+        await storage.SaveGroupAsync(group, "");
+        var post = new Post
+        {
+            Kind = PostKind.Existing, Title = "Post", Url = "https://facebook.com/example/posts/42/"
+        };
+        await storage.SavePostAsync(post);
+        var campaignId = await storage.SaveCampaignAsync("Campaign", post.Id, [group.Id], null);
+        var target = await storage.QueryAsync(db => db.Targets.SingleAsync());
+        await storage.RecordAttemptAsync(target.Id, TargetStatus.Failed, "");
+
+        await storage.ArchiveCampaignAsync(campaignId);
+        await storage.ArchiveCampaignAsync(campaignId);
+        Assert.True(await storage.QueryAsync(db => db.Campaigns.Select(campaign => campaign.IsArchived).SingleAsync()));
+        Assert.Equal(target.Id, await storage.QueryAsync(db => db.Attempts.Select(attempt => attempt.CampaignGroupId).SingleAsync()));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.BeginTargetAsync(target.Id));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.RecordAttemptAsync(target.Id, TargetStatus.Skipped, ""));
+    }
+
+    [Fact]
+    public async Task GroupImportAndEditKeepValidatedThumbnail()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var group = new SocialGroup
+        {
+            Name = "Imported", Url = "https://facebook.com/groups/example/",
+            FacebookImageUrl = "https://scontent.example.fbcdn.net/group.jpg"
+        };
+        Assert.Equal((1, 0), await storage.ImportGroupsAsync([group]));
+        var saved = await storage.QueryAsync(db => db.Groups.SingleAsync());
+        Assert.Equal(group.FacebookImageUrl, saved.FacebookImageUrl);
+
+        await storage.SaveGroupAsync(new SocialGroup { Id = saved.Id, Url = saved.Url, Name = "Local name" }, "");
+        Assert.Equal(group.FacebookImageUrl, await storage.QueryAsync(db => db.Groups.Select(item => item.FacebookImageUrl).SingleAsync()));
+    }
+
     public void Dispose() => Directory.Delete(folder, recursive: true);
 
     private sealed class Factory(DbContextOptions<PilotDb> options) : IDbContextFactory<PilotDb>

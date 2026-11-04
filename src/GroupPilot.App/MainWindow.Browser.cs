@@ -367,6 +367,7 @@ public sealed partial class MainWindow
                         .map(link => {
                             const key = link.pathname.toLowerCase().replace(/\/$/, '');
                             let text = link.innerText;
+                            let imageScope = link;
                             for (let card = link.parentElement, depth = 0; card && depth < 5; card = card.parentElement, depth++) {
                                 if (card.matches('[role="main"], main') || card.innerText.length > 1200)
                                     break;
@@ -374,9 +375,16 @@ public sealed partial class MainWindow
                                     groupPath.test(other.pathname) && other.pathname.toLowerCase().replace(/\/$/, '') !== key))
                                     break;
                                 text = card.innerText;
+                                imageScope = card;
                             }
+                            const image = Array.from(imageScope.querySelectorAll('img')).find(img => {
+                                const source = img.currentSrc || img.src;
+                                return img.naturalWidth >= 40 && img.naturalHeight >= 40 &&
+                                    /^https:\/\/[^/]+\.fbcdn\.net\//i.test(source);
+                            });
                             return {
                                 Url: link.href,
+                                FacebookImageUrl: image?.currentSrc || image?.src || '',
                                 Name: (link.innerText.split('\n').find(line => line.trim()) ?? link.getAttribute('aria-label') ?? '').trim().slice(0, 250),
                                 FacebookCardText: text.trim().slice(0, 1200)
                             };
@@ -428,6 +436,9 @@ public sealed partial class MainWindow
                 if (string.IsNullOrWhiteSpace(previous.Name))
                     previous.Name = row.Name;
                 previous.MemberCount ??= row.MemberCount;
+                if (!Validation.IsFacebookThumbnailUrl(previous.FacebookImageUrl)
+                    && Validation.IsFacebookThumbnailUrl(row.FacebookImageUrl))
+                    previous.FacebookImageUrl = row.FacebookImageUrl;
                 if (previous.FacebookVisibility.Length == 0)
                     previous.FacebookVisibility = row.FacebookVisibility;
                 if (previous.FacebookActivity.Length == 0)
@@ -572,7 +583,7 @@ public sealed partial class MainWindow
         if (publishingTarget is { } context)
         {
             NavigateTo("Campaigns");
-            ShowCampaignDetails(model.Campaigns.Single(item => item.Id == context.CampaignId));
+            ShowCampaignDetails(model.Campaigns.Single(item => item.Id == context.CampaignId && !item.IsArchived));
         }
         else
         {

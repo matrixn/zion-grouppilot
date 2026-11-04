@@ -32,6 +32,7 @@ public sealed class SocialGroup
     public string FacebookVisibility { get; set; } = "";
     public string FacebookActivity { get; set; } = "";
     public string FacebookCardText { get; set; } = "";
+    public string FacebookImageUrl { get; set; } = "";
     public DateTimeOffset? FacebookScannedAt { get; set; }
 
     public override string ToString() =>
@@ -74,6 +75,7 @@ public sealed class Campaign
     public int PostId { get; set; }
     public Post Post { get; set; } = null!;
     public DateTimeOffset? ScheduledFor { get; set; }
+    public bool IsArchived { get; set; }
     public List<CampaignGroup> Targets { get; set; } = [];
     public override string ToString() => $"{Name} · {Targets.Count} groups" +
         (ScheduledFor is { } scheduled ? $" · {scheduled.ToLocalTime():g}" : "");

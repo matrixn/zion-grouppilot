@@ -229,7 +229,7 @@ public sealed partial class MainWindow : Window
         }
         Metric("Saved posts", model.Posts.Count(IsLibraryPost));
         Metric("Saved groups", model.Groups.Count);
-        Metric("Campaigns", model.Campaigns.Count);
+        Metric("Campaigns", model.Campaigns.Count(campaign => !campaign.IsArchived));
 
         var workspace = Section(page, "Quick actions");
         workspace.Children.Add(Label("Import existing Facebook posts or manage your groups and campaigns."));

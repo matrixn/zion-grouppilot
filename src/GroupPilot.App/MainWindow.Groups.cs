@@ -13,62 +13,80 @@ public sealed partial class MainWindow
         var categories = Choices("Category", new[] { "All categories" }.Concat(
             model.Groups.Select(group => group.Category?.Name).OfType<string>().Distinct().Order()), "All categories");
         var visibility = Choices("Facebook visibility", new[] { "Any", "Public", "Private", "Unknown" }, "Any");
-        var minimumMembers = new NumberBox { Header = "Minimum members", Minimum = 0, PlaceholderText = "Any" };
-        var groups = List(model.Groups);
+        var ranges = Choices("Member range", GroupMemberRanges(), MemberRange.All);
+        var order = Choices("Sort groups", new[] { "Name", "Members: low to high", "Members: high to low" }, "Name");
         var empty = Label("");
+        var cardHost = new StackPanel();
         void Filter()
         {
+            var range = ranges.SelectedItem as MemberRange ?? MemberRange.All;
             var matches = model.Groups.Where(group =>
-                (double.IsNaN(minimumMembers.Value) || (group.MemberCount is { } members && members >= minimumMembers.Value)) &&
+                range.Includes(group.MemberCount) &&
                 (visibility.SelectedIndex <= 0 || Equals(visibility.SelectedItem,
                     group.FacebookVisibility.Length == 0 ? "Unknown" : group.FacebookVisibility)) &&
                 (categories.SelectedIndex <= 0 || Equals(group.Category?.Name, categories.SelectedItem)) &&
                 (group.Name.Contains(search.Text, StringComparison.OrdinalIgnoreCase) ||
-                 group.Url.Contains(search.Text, StringComparison.OrdinalIgnoreCase))).ToArray();
-            groups.ItemsSource = matches;
-            empty.Text = matches.Length == 0 ? "No groups match. Add a group or import a CSV." : "";
+                 group.Url.Contains(search.Text, StringComparison.OrdinalIgnoreCase)));
+            var sorted = order.SelectedIndex switch
+            {
+                1 => matches.OrderBy(group => group.MemberCount is null).ThenBy(group => group.MemberCount),
+                2 => matches.OrderBy(group => group.MemberCount is null).ThenByDescending(group => group.MemberCount),
+                _ => matches.OrderBy(group => group.Name, StringComparer.CurrentCultureIgnoreCase)
+            };
+            var groups = sorted.ThenBy(group => group.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+            cardHost.Children.Clear();
+            empty.Text = groups.Length == 0 ? "No groups match." : $"{groups.Length:N0} groups";
+            if (groups.Length == 0)
+                return;
+
+            var cards = ResponsiveGrid(cardHost, 3, 252);
+            foreach (var group in groups)
+            {
+                var card = Section(cards, group.Name);
+                card.Children.Add(CreateThumbnail(group.FacebookImageUrl, 132));
+                card.Children.Add(Label(group.MemberCount is { } count ? $"~{count:N0} members" : "Member count unknown"));
+                card.Children.Add(Label(string.Join(" | ", new[]
+                {
+                    group.Category?.Name, group.FacebookVisibility, group.PostingAccess.ToString()
+                }.Where(value => !string.IsNullOrWhiteSpace(value)))));
+                if (!string.IsNullOrWhiteSpace(group.FacebookActivity))
+                    card.Children.Add(Label(group.FacebookActivity));
+                if (group.FacebookScannedAt is { } scanned && group.FacebookCardText.Length > 0)
+                {
+                    var details = new Expander { Header = $"Facebook scan: {scanned.ToLocalTime():g}", Content = Label(group.FacebookCardText) };
+                    card.Children.Add(details);
+                }
+                var actions = ResponsiveGrid(card, 2, 105);
+                Action(actions, "Edit", () => EditGroupAsync(group));
+                Action(actions, "Review in Facebook", () => OpenFacebookAsync(group.Url, group: group));
+                Action(actions, "Delete", async () =>
+                {
+                    if (await Dialog("Delete group?", Label($"Remove {group.Name} from the group library? Campaign history is kept."), "Delete").ShowAsync()
+                        != ContentDialogResult.Primary)
+                        return;
+                    await storage.SaveAsync(async db =>
+                    {
+                        var existing = await db.Groups.FindAsync(group.Id);
+                        if (existing is not null)
+                            db.Groups.Remove(existing);
+                    });
+                    await model.ReloadAsync();
+                    ShowGroups();
+                });
+            }
         }
 
-        ResponsiveGrid(directory, 4, 170, search, categories, visibility, minimumMembers);
+        ResponsiveGrid(directory, 5, 168, search, categories, visibility, ranges, order);
+        Action(directory, "Add group", () => EditGroupAsync(null), primary: true);
         directory.Children.Add(empty);
-        directory.Children.Add(groups);
+        page.Children.Add(cardHost);
         search.TextChanged += (_, _) => Filter();
         categories.SelectionChanged += (_, _) => Filter();
         visibility.SelectionChanged += (_, _) => Filter();
-        minimumMembers.ValueChanged += (_, _) => Filter();
-        var details = Label("");
-        directory.Children.Add(details);
-        groups.SelectionChanged += (_, _) =>
-        {
-            details.Text = groups.SelectedItem is SocialGroup group && group.FacebookScannedAt is { } scanned
-                ? $"Facebook scan: {scanned.ToLocalTime():g}\n{group.FacebookCardText}" : "";
-        };
+        ranges.SelectionChanged += (_, _) => Filter();
+        order.SelectionChanged += (_, _) => Filter();
         Filter();
 
-        SocialGroup Selected() => groups.SelectedItem as SocialGroup ?? throw new ArgumentException("Select a group first.");
-        var actions = ResponsiveGrid(directory, 4, 160);
-        Action(actions, "Add group", () => EditGroupAsync(null), primary: true);
-        Action(actions, "Edit selected group", () => EditGroupAsync(Selected()));
-        Action(actions, "Review in Facebook", () =>
-        {
-            var group = Selected();
-            return OpenFacebookAsync(group.Url, group: group);
-        });
-        Action(actions, "Delete selected group", async () =>
-        {
-            var group = Selected();
-            if (await Dialog("Delete group?", Label($"Remove {group.Name} from the group library? Campaign history is kept."), "Delete").ShowAsync()
-                != ContentDialogResult.Primary)
-                return;
-            await storage.SaveAsync(async db =>
-            {
-                var existing = await db.Groups.FindAsync(group.Id);
-                if (existing is not null)
-                    db.Groups.Remove(existing);
-            });
-            await model.ReloadAsync();
-            ShowGroups();
-        });
         var sync = Section(page, "Facebook sync");
         sync.Children.Add(Label("Open your groups and choose Sync groups. GroupPilot scrolls the list and previews additions and removals."));
         Action(sync, "Open my groups in Facebook", () => OpenFacebookAsync(FacebookGroups), primary: true);
@@ -81,9 +99,39 @@ public sealed partial class MainWindow
                 return;
             var result = await storage.ImportGroupsAsync(path);
             await model.ReloadAsync();
-            Filter();
+            var previousRange = ranges.SelectedItem as MemberRange;
+            var updatedRanges = GroupMemberRanges();
+            ranges.ItemsSource = updatedRanges;
+            ranges.SelectedItem = updatedRanges.FirstOrDefault(range => range == previousRange) ?? MemberRange.All;
             importResult.Text = $"Imported {result.Added}; skipped {result.Skipped} invalid or duplicate rows.";
         });
+    }
+
+    private IReadOnlyList<MemberRange> GroupMemberRanges()
+    {
+        var counts = model.Groups.Where(group => group.MemberCount.HasValue)
+            .Select(group => group.MemberCount!.Value).Distinct().Order().ToArray();
+        var ranges = new List<MemberRange> { MemberRange.All };
+        if (model.Groups.Any(group => group.MemberCount is null))
+            ranges.Add(new MemberRange("Unknown", null, null));
+        if (counts.Length == 0)
+            return ranges;
+
+        var bucketCount = Math.Min(5, counts.Length);
+        for (var index = 0; index < bucketCount; index++)
+        {
+            var min = counts[index * counts.Length / bucketCount];
+            var max = counts[(index + 1) * counts.Length / bucketCount - 1];
+            ranges.Add(new MemberRange(min == max ? $"{min:N0}" : $"{min:N0} - {max:N0}", min, max));
+        }
+        return ranges;
+    }
+
+    private sealed record MemberRange(string Label, long? Min, long? Max)
+    {
+        public static readonly MemberRange All = new("All member counts", null, null);
+        public bool Includes(long? count) => this == All || (Min is null ? count is null : count >= Min && count <= Max);
+        public override string ToString() => Label;
     }
 
     private async Task EditGroupAsync(SocialGroup? source)

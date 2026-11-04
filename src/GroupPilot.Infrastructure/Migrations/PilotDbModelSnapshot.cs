@@ -38,6 +38,9 @@ namespace GroupPilot.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -237,6 +240,10 @@ namespace GroupPilot.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("FacebookCardText")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FacebookImageUrl")
                         .IsRequired()
                         .HasColumnType("TEXT");
 

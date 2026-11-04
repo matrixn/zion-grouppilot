@@ -44,9 +44,10 @@ public sealed partial class MainWindow
     {
         var page = Page("Campaigns", "Run a campaign now or save it for later. Confirm each share in Facebook.");
         var saved = Section(page, "Saved campaigns");
-        var campaigns = List(model.Campaigns);
-        saved.Children.Add(model.Campaigns.Count == 0 ? Label("No campaigns yet.") : campaigns);
-        var actions = ResponsiveGrid(saved, 3, 182);
+        var active = model.Campaigns.Where(campaign => !campaign.IsArchived).ToArray();
+        var campaigns = List(active);
+        saved.Children.Add(active.Length == 0 ? Label("No campaigns yet.") : campaigns);
+        var actions = ResponsiveGrid(saved, 4, 172);
         Action(actions, "Create campaign", CreateCampaignAsync, primary: true);
         Action(actions, "Run campaign now", () =>
         {
@@ -54,6 +55,8 @@ public sealed partial class MainWindow
             ShowCampaignDetails(selected);
             return RunCampaignNowAsync(selected);
         });
+        Action(actions, "Delete selected campaign", () => DeleteCampaignAsync(
+            campaigns.SelectedItem as Campaign ?? throw new ArgumentException("Select a campaign.")));
         Action(actions, "Open selected campaign", () =>
         {
             ShowCampaignDetails(campaigns.SelectedItem as Campaign ?? throw new ArgumentException("Select a campaign."));
@@ -143,11 +146,34 @@ public sealed partial class MainWindow
             targetSection.Children.Add(Label("This campaign has no existing Facebook post to share. You can still record its outcomes."));
         }
         Action(actions, "Record selected outcome", () => RecordOutcomeAsync(campaign, Selected()));
+        Action(page, "Delete campaign", () => DeleteCampaignAsync(campaign));
         Action(page, "Back to campaigns", () =>
         {
             ShowCampaigns();
             return Task.CompletedTask;
         });
+    }
+
+    private async Task DeleteCampaignAsync(Campaign campaign)
+    {
+        if (await Dialog($"Delete {campaign.Name}?", Label("Remove this campaign from the list? Its publishing history is kept."),
+            "Delete").ShowAsync() != ContentDialogResult.Primary)
+            return;
+
+        await storage.ArchiveCampaignAsync(campaign.Id);
+        if (publishingTarget?.CampaignId == campaign.Id)
+        {
+            publishingTarget = null;
+            if (outcomeButton is not null)
+            {
+                outcomeButton.IsEnabled = false;
+                outcomeButton.Visibility = Visibility.Collapsed;
+            }
+            if (browserContext is not null)
+                browserContext.Text = "Campaign removed.";
+        }
+        await model.ReloadAsync();
+        ShowCampaigns();
     }
 
     private CampaignGroup? NextCampaignTarget(Campaign campaign, int? excludeTarget = null) => campaign.Targets

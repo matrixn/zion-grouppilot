@@ -40,7 +40,10 @@ public sealed partial class MainWindow
     private static bool IsLibraryPost(Post post) =>
         !post.IsArchived && post.Kind == PostKind.Existing && Validation.IsFacebookPostUrl(post.Url);
 
-    private static Grid CreatePostThumbnail(Post post, double height = 270)
+    private static Grid CreatePostThumbnail(Post post, double height = 270) =>
+        CreateThumbnail(post.ThumbnailUrl, height, post.Media.FirstOrDefault()?.Path);
+
+    private static Grid CreateThumbnail(string url, double height, string? localPath = null)
     {
         var panel = new Grid { Height = height };
         var placeholder = Label("No image available");
@@ -52,7 +55,7 @@ public sealed partial class MainWindow
         panel.Children.Add(placeholder);
         panel.Children.Add(image);
 
-        if (post.Media.FirstOrDefault() is { } media)
+        if (localPath is not null)
         {
             image.Loaded += async (_, _) =>
             {
@@ -60,7 +63,7 @@ public sealed partial class MainWindow
                     return;
                 try
                 {
-                    var file = await StorageFile.GetFileFromPathAsync(media.Path);
+                    var file = await StorageFile.GetFileFromPathAsync(localPath);
                     using var stream = await file.OpenReadAsync();
                     var bitmap = new BitmapImage { DecodePixelWidth = 800 };
                     await bitmap.SetSourceAsync(stream);
@@ -68,7 +71,7 @@ public sealed partial class MainWindow
                 }
                 catch (Exception ex)
                 {
-                    Serilog.Log.Debug(ex, "Post thumbnail unavailable for {PostId}", post.Id);
+                    Serilog.Log.Debug(ex, "Local thumbnail unavailable");
                     SetRemoteThumbnail();
                 }
             };
@@ -80,8 +83,8 @@ public sealed partial class MainWindow
 
         void SetRemoteThumbnail()
         {
-            if (Validation.IsFacebookThumbnailUrl(post.ThumbnailUrl))
-                image.Source = new BitmapImage(new Uri(post.ThumbnailUrl)) { DecodePixelWidth = 800 };
+            if (Validation.IsFacebookThumbnailUrl(url))
+                image.Source = new BitmapImage(new Uri(url)) { DecodePixelWidth = 800 };
         }
         return panel;
     }

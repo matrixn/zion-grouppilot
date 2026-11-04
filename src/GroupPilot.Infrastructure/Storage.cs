@@ -222,6 +222,8 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         target.FacebookVisibility = source.FacebookVisibility;
         target.FacebookActivity = source.FacebookActivity;
         target.FacebookCardText = source.FacebookCardText;
+        if (Validation.IsFacebookThumbnailUrl(source.FacebookImageUrl))
+            target.FacebookImageUrl = source.FacebookImageUrl;
         target.FacebookScannedAt = source.FacebookScannedAt;
     }
 
@@ -279,6 +281,13 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         return campaign.Id;
     }
 
+    public async Task ArchiveCampaignAsync(int campaignId)
+    {
+        await using var db = await factory.CreateDbContextAsync();
+        await db.Campaigns.Where(campaign => campaign.Id == campaignId)
+            .ExecuteUpdateAsync(update => update.SetProperty(campaign => campaign.IsArchived, true));
+    }
+
     public Task SaveGroupReviewAsync(int groupId, string reviewedUrl, GroupPostingAccess access, string rules)
     {
         if (access is not (GroupPostingAccess.Allowed or GroupPostingAccess.RequiresApproval or GroupPostingAccess.Unavailable))
@@ -299,6 +308,8 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
 
     public Task BeginTargetAsync(int targetId) => SaveAsync(async db =>
     {
+        if (!await db.Campaigns.AnyAsync(campaign => !campaign.IsArchived && campaign.Targets.Any(item => item.Id == targetId)))
+            throw new ArgumentException("This campaign is no longer available.");
         var target = await db.Targets.FindAsync(targetId) ?? throw new ArgumentException("Target unavailable.");
         if (target.Status is TargetStatus.Published or TargetStatus.Skipped or TargetStatus.AwaitingApproval)
             throw new ArgumentException("This target is closed or awaiting approval.");
@@ -316,6 +327,8 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
 
         return SaveAsync(async db =>
         {
+            if (!await db.Campaigns.AnyAsync(campaign => !campaign.IsArchived && campaign.Targets.Any(item => item.Id == targetId)))
+                throw new ArgumentException("This campaign is no longer available.");
             var target = await db.Targets.FindAsync(targetId) ?? throw new InvalidOperationException("Target unavailable.");
             if (target.Status is TargetStatus.Published or TargetStatus.Skipped)
                 throw new InvalidOperationException("This target is already closed.");
