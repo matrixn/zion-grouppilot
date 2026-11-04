@@ -2,6 +2,7 @@ namespace GroupPilot.Core;
 
 public enum PostKind { Existing, New, Remix }
 public enum TargetStatus { Pending, Published, Failed, Skipped, InProgress, AwaitingApproval }
+public enum CampaignRecurrence { Once, Daily, EveryTwoDays, EveryThreeDays, Weekly, Monthly, TwiceMonthly, ThreeTimesMonthly, FourTimesMonthly }
 public enum GroupPostingAccess { Unreviewed, Allowed, RequiresApproval, Unavailable }
 
 public sealed class SocialAccount
@@ -76,6 +77,10 @@ public sealed class Campaign
     public Post Post { get; set; } = null!;
     public DateTimeOffset? ScheduledFor { get; set; }
     public int PauseSeconds { get; set; } = 120;
+    public CampaignRecurrence Recurrence { get; set; }
+    public string TimeZoneId { get; set; } = "";
+    public DateTimeOffset? NextRunAt { get; set; }
+    public int RunNumber { get; set; } = 1;
     public bool IsArchived { get; set; }
     public List<CampaignGroup> Targets { get; set; } = [];
     public override string ToString() => $"{Name} · {Targets.Count} groups" +
@@ -98,9 +103,10 @@ public sealed class PublishingAttempt
     public int CampaignGroupId { get; set; }
     public CampaignGroup Target { get; set; } = null!;
     public DateTimeOffset RecordedAt { get; set; }
+    public int RunNumber { get; set; } = 1;
     public TargetStatus Status { get; set; }
     public string PublishedUrl { get; set; } = "";
-    public override string ToString() => $"{RecordedAt.ToLocalTime():g} · {Target.GroupName} · {Status} {PublishedUrl}";
+    public override string ToString() => $"{RecordedAt.ToLocalTime():g} · Run {RunNumber} · {Target.GroupName} · {Status} {PublishedUrl}";
 }
 
 public sealed class AppSettings
@@ -108,4 +114,5 @@ public sealed class AppSettings
     public int Id { get; set; }
     public string Theme { get; set; } = "Default";
     public DateTimeOffset? NextShareAt { get; set; }
+    public string LastShareGroupUrl { get; set; } = "";
 }

@@ -23,6 +23,10 @@ namespace GroupPilot.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("LastShareGroupUrl")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("NextShareAt")
                         .HasColumnType("TEXT");
 
@@ -48,6 +52,9 @@ namespace GroupPilot.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("NextRunAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("PauseSeconds")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
@@ -56,7 +63,19 @@ namespace GroupPilot.Infrastructure.Migrations
                     b.Property<int>("PostId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<int>("Recurrence")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("RunNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
                     b.Property<DateTimeOffset?>("ScheduledFor")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -205,6 +224,11 @@ namespace GroupPilot.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset>("RecordedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("RunNumber")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
 
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");

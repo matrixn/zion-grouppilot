@@ -1,6 +1,6 @@
 # GroupPilot
 
-**Versiune curentă** `0.00.16`
+**Versiune curentă** `0.00.17`
 
 GroupPilot este o aplicație desktop nativă pentru Windows 11. Pregătești postări, organizezi grupuri Facebook și urmărești local campaniile de distribuire. Trimiterea finală se face manual în interfața Facebook, pentru fiecare grup.
 
@@ -28,7 +28,7 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [x] Grupuri cu editare, ștergere, căutare, categorii, note, reguli și stare activă. Importă CSV cu antetul `name,url` sau câte un URL pe rând. URL-urile echivalente sunt deduplicate.
 - [x] Campanii cu postare salvată, selecție de grupuri active, dată și oră de planificare, stare per grup și reluarea țintelor în așteptare sau eșuate.
 - [x] WebView2 cu profil persistent separat și navigare către postări și grupuri Facebook. Autentificarea are loc în interfața Facebook.
-- [x] Publicare asistată. Campania copiază linkul postării Facebook și deschide grupul. După trimiterea manuală în Facebook, utilizatorul înregistrează rezultatul și URL-ul publicat. Data planificată rămâne informație pentru utilizator.
+- [x] Publicare asistată. Campania copiază linkul postării Facebook și deschide grupul. După trimiterea manuală în Facebook, utilizatorul înregistrează rezultatul și URL-ul publicat. Aplicația anunță campaniile scadente cât timp rămâne deschisă.
 - [x] Notificare Windows pentru închiderea tuturor țintelor campaniei, unde API-ul este disponibil.
 
 - [x] Pagini de lucru aliniate la stânga, formulare grupate și coloane care se rearanjează la redimensionare. Identitatea vizuală folosește iconul F în fereastră și în resursele Windows.
@@ -49,6 +49,16 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [ ] Verifică afișarea notificării Windows și lansarea pe x86 și ARM64.
 
 ## Istoricul versiunilor
+
+### 0.00.17
+
+- [x] Formularul de campanie este o pagină cu patru secțiuni numerotate, selecții delimitate, căutare în grupuri, contor de selecție și butoane de salvare vizibile permanent.
+- [x] Recurențe disponibile la creare: o singură dată, zilnic, la 2 zile, la 3 zile, săptămânal, lunar, de 2, 3 sau 4 ori pe lună. Ora folosește fusul local, inclusiv schimbarea orei de vară.
+- [x] Pentru lunar, se păstrează ziua selectată, cu ultima zi disponibilă în lunile mai scurte. Pentru 2–4 rulări pe lună, datele sunt distribuite uniform în luna calendaristică, la ora aleasă. Prima rulare folosește data selectată.
+- [x] După încheierea unei runde, se calculează următoarea dată. **Run campaign now** pornește o nouă rundă când devine scadentă. Rulările ratate sunt sărite, iar rezultatele anterioare rămân în istoric. Țintele în așteptarea aprobării sau eșuate trebuie rezolvate înainte de runda următoare.
+- [x] Aplicația afișează notificări pentru campaniile scadente cât timp este deschisă. Distribuirile se confirmă în Facebook.
+- [x] Lista campaniilor arată numărul grupurilor și pictograma de informații cu lista grupurilor în tooltip.
+- [x] Pauza începe după înregistrarea rezultatului unei distribuiri și se aplică înainte de deschiderea unui grup diferit.
 
 ### 0.00.16
 
@@ -137,4 +147,4 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [x] Documentate fundația WinUI 3 inițială, pașii de build și lansare și etapele MVP.
 - [x] Stabilită versiunea de bază `0.00.01`.
 
-La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.16` corespunde metadatelor .NET `0.0.16` și MSIX `0.0.16.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.
+La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.17` corespunde metadatelor .NET `0.0.17` și MSIX `0.0.17.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.

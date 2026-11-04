@@ -300,34 +300,60 @@ public sealed class StorageTests : IDisposable
         var storage = Open(clock);
         await storage.InitializeAsync();
         var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/example/" };
+        var other = new SocialGroup { Name = "Other", Url = "https://facebook.com/groups/other/" };
         await storage.SaveGroupAsync(group, "");
+        await storage.SaveGroupAsync(other, "");
         var post = new Post { Kind = PostKind.Existing, Title = "Post", Url = "https://facebook.com/example/posts/1" };
         await storage.SavePostAsync(post);
         var first = await storage.SaveCampaignAsync("First", post.Id, [group.Id], null, 120);
-        var second = await storage.SaveCampaignAsync("Second", post.Id, [group.Id], null, 30);
+        var second = await storage.SaveCampaignAsync("Second", post.Id, [other.Id], null, 30);
         var campaigns = await storage.QueryAsync(db => db.Campaigns.Include(campaign => campaign.Targets).ToListAsync());
         var firstTarget = campaigns.Single(campaign => campaign.Id == first).Targets.Single().Id;
         var secondTarget = campaigns.Single(campaign => campaign.Id == second).Targets.Single().Id;
 
         await storage.BeginTargetAsync(firstTarget);
-        Assert.Equal(clock.Now.AddSeconds(120), await Open(clock).GetNextShareAtAsync());
-        await Assert.ThrowsAsync<ArgumentException>(() => Open(clock).BeginTargetAsync(secondTarget));
-        Assert.Equal(TargetStatus.Pending, await storage.QueryAsync(db => db.Targets
-            .Where(target => target.Id == secondTarget).Select(target => target.Status).SingleAsync()));
-
+        Assert.Null(await Open(clock).GetNextShareAtAsync());
         clock.Now = clock.Now.AddSeconds(10);
         await storage.RecordAttemptAsync(firstTarget, TargetStatus.Published, "https://facebook.com/groups/example/posts/42");
-        Assert.Equal(clock.Now.AddSeconds(120), await storage.GetNextShareAtAsync());
+        Assert.Equal(clock.Now.AddSeconds(120), await Open(clock).GetNextShareAtAsync(other.Url));
+        Assert.Null(await storage.GetNextShareAtAsync(group.Url));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.BeginTargetAsync(secondTarget));
 
         clock.Now = clock.Now.AddSeconds(119);
         await Assert.ThrowsAsync<ArgumentException>(() => storage.BeginTargetAsync(secondTarget));
         clock.Now = clock.Now.AddSeconds(1);
         await Open(clock).BeginTargetAsync(secondTarget);
-        Assert.Equal(clock.Now.AddSeconds(30), await storage.GetNextShareAtAsync());
-        await storage.UpdateCampaignPauseAsync(second, 60);
-        Assert.Equal(60, await storage.QueryAsync(db => db.Campaigns.Where(campaign => campaign.Id == second)
-            .Select(campaign => campaign.PauseSeconds).SingleAsync()));
-        await Assert.ThrowsAsync<ArgumentException>(() => storage.UpdateCampaignPauseAsync(second, -1));
+        await storage.RecordAttemptAsync(secondTarget, TargetStatus.AwaitingApproval, "");
+        Assert.Equal(clock.Now.AddSeconds(30), await storage.GetNextShareAtAsync(group.Url));
+    }
+
+    [Fact]
+    public async Task RecurringRunRetainsHistoryAndOnlyReopensWhenDue()
+    {
+        var clock = new ManualClock();
+        var storage = Open(clock);
+        await storage.InitializeAsync();
+        var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/test/" };
+        await storage.SaveGroupAsync(group, "");
+        var post = new Post { Title = "Post", Kind = PostKind.Existing, Url = "https://facebook.com/page/posts/42" };
+        await storage.SavePostAsync(post);
+        var id = await storage.SaveCampaignAsync("Daily", post.Id, [group.Id], clock.Now, 60,
+            CampaignRecurrence.Daily, TimeZoneInfo.Utc.Id);
+        await storage.PrepareCampaignRunAsync(id);
+        var target = await storage.QueryAsync(db => db.Targets.SingleAsync());
+        await storage.RecordAttemptAsync(target.Id, TargetStatus.Published, "https://facebook.com/groups/test/posts/123", 1);
+        var next = await storage.QueryAsync(db => db.Campaigns.Select(item => item.NextRunAt).SingleAsync());
+        Assert.Equal(clock.Now.AddDays(1), next);
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.PrepareCampaignRunAsync(id));
+        clock.Now = next!.Value;
+        await Open(clock).PrepareCampaignRunAsync(id);
+        Assert.Equal(2, await storage.QueryAsync(db => db.Campaigns.Select(item => item.RunNumber).SingleAsync()));
+        Assert.Equal(TargetStatus.Pending, await storage.QueryAsync(db => db.Targets.Select(item => item.Status).SingleAsync()));
+        Assert.Equal(1, await storage.QueryAsync(db => db.Attempts.Select(item => item.RunNumber).SingleAsync()));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.RecordAttemptAsync(target.Id, TargetStatus.Published,
+            "https://facebook.com/groups/test/posts/124", 1));
+        await storage.PrepareCampaignRunAsync(id);
+        Assert.Equal(2, await storage.QueryAsync(db => db.Campaigns.Select(item => item.RunNumber).SingleAsync()));
     }
 
     private sealed class ManualClock : TimeProvider

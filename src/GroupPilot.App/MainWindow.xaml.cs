@@ -37,6 +37,7 @@ public sealed partial class MainWindow : Window
         Root.Loaded += Initialize;
         Closed += (_, _) =>
         {
+            campaignReminderTimer?.Stop();
             var view = browser;
             browser = null;
             view?.Close();
@@ -59,6 +60,7 @@ public sealed partial class MainWindow : Window
             initialized = true;
             NavigateTo("Dashboard");
             Serilog.Log.Information("GroupPilot dashboard ready");
+            StartCampaignReminders();
         }
         catch
         {

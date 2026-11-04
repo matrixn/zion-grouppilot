@@ -1,5 +1,14 @@
 # Progres GroupPilot
 
+## 0.00.17 · Campanii recurente și formular organizat
+
+- [x] Formular pe secțiuni numerotate, cu selectori delimitați și acțiuni de salvare vizibile permanent.
+- [x] Recurențe zilnice, la 2–3 zile, săptămânale și de 1–4 ori pe lună, cu păstrarea istoricului rundelor.
+- [x] Contor de grupuri și tooltip cu lista din campanie.
+- [x] Pauză după distribuire între grupuri diferite și notificări pentru campaniile scadente.
+- [x] Verificare vizuală în aplicația Windows a secțiunilor, selectorului de recurență și butoanelor fixe de salvare.
+- [x] 34 de teste trecute, inclusiv date calendaristice, oră de vară, păstrarea istoricului și pauza după distribuire.
+
 ## 0.00.16 · Pauză între distribuiri
 
 - [x] Pauză configurabilă per campanie, implicit 120 de secunde, cu următoarea disponibilitate salvată în SQLite pentru profilul local Facebook.
