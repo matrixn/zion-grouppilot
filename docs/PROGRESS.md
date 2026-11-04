@@ -1,5 +1,9 @@
 # Progres GroupPilot
 
+## 0.00.10 · Versiune în bara de titlu
+
+- [x] Versiunea este citită din metadatele buildului și afișată în titlul ferestrei.
+
 ## 0.00.09 · Import contextual de postari
 
 - [x] Importul de postari alege intre lista profilului si postarea individuala, in functie de pagina deschisa.

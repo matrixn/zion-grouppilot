@@ -20,6 +20,9 @@ public sealed partial class MainWindow : Window
         this.storage = storage;
         this.model = model;
         InitializeComponent();
+        var version = typeof(MainWindow).Assembly.GetName().Version!;
+        Title = $"GroupPilot v{version.Major}.{version.Minor:00}.{version.Build:00}";
+        AppTitleBar.Title = Title;
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
