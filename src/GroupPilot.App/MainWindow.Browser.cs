@@ -78,6 +78,7 @@ public sealed partial class MainWindow
         publishingTarget = target;
         reviewButton!.IsEnabled = group is not null;
         outcomeButton!.IsEnabled = target is not null;
+        outcomeButton.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
         browserContext!.Text = target is not null ? $"Campaign target · {group?.Name} · Submit manually, then record the outcome." :
             group is not null ? $"Group review · {group.Name}" :
             "Browse Facebook or import a post from its permalink.";
@@ -184,7 +185,8 @@ public sealed partial class MainWindow
         UpdateGroupActions();
         ToolTipService.SetToolTip(syncGroupsButton, "Use Open my groups first. Sync runs only on your Facebook groups list.");
         reviewButton = FacebookAction(actions, "Record group review", ReviewCurrentGroupAsync);
-        outcomeButton = FacebookAction(actions, "Record campaign outcome", RecordBrowserOutcomeAsync);
+        outcomeButton = FacebookAction(toolbar, "Record campaign outcome", RecordBrowserOutcomeAsync);
+        outcomeButton.Visibility = Visibility.Collapsed;
         reviewButton.IsEnabled = false;
         outcomeButton.IsEnabled = false;
         layout.Children.Add(toolbar);

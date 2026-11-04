@@ -40,9 +40,9 @@ public sealed partial class MainWindow
     private static bool IsLibraryPost(Post post) =>
         !post.IsArchived && post.Kind == PostKind.Existing && Validation.IsFacebookPostUrl(post.Url);
 
-    private static Grid CreatePostThumbnail(Post post)
+    private static Grid CreatePostThumbnail(Post post, double height = 270)
     {
-        var panel = new Grid { Height = 270 };
+        var panel = new Grid { Height = height };
         var placeholder = Label("No image available");
         placeholder.HorizontalAlignment = HorizontalAlignment.Center;
         placeholder.VerticalAlignment = VerticalAlignment.Center;

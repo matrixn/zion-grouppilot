@@ -1,5 +1,11 @@
 # Progres GroupPilot
 
+## 0.00.14 · Rulare imediată și selector vizual
+
+- [x] Pornire imediată din lista de campanii, din detalii sau după salvare, cu trecere la următorul grup după înregistrarea rezultatului.
+- [x] Selector de postare cu imagine, titlu, extras și link.
+- [ ] Verificarea vizuală a selectorului și confirmarea distribuirii într-un grup de test.
+
 ## 0.00.13 · Distribuire din biblioteca Facebook
 
 - [x] Interfață concentrată pe importul și distribuirea postărilor existente pe Facebook.

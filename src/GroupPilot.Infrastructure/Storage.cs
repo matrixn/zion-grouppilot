@@ -258,26 +258,25 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory)
         return (added, skipped);
     }
 
-    public Task SaveCampaignAsync(string name, int postId, IReadOnlyCollection<int> groupIds, DateTimeOffset? schedule)
+    public async Task<int> SaveCampaignAsync(string name, int postId, IReadOnlyCollection<int> groupIds, DateTimeOffset? schedule)
     {
         if (string.IsNullOrWhiteSpace(name) || groupIds.Count == 0)
             throw new ArgumentException("Enter a campaign name and select at least one group.");
 
-        return SaveAsync(async db =>
+        var campaign = new Campaign { Name = name, PostId = postId, ScheduledFor = schedule };
+        await SaveAsync(async db =>
         {
             var groups = await db.Groups.Where(group => group.Enabled && groupIds.Contains(group.Id)).ToListAsync();
             if (groups.Count != groupIds.Count || !await db.Posts.AnyAsync(post => post.Id == postId && !post.IsArchived))
                 throw new InvalidOperationException("The selected post or groups have changed. Reload and try again.");
 
-            db.Campaigns.Add(new Campaign
+            campaign.Targets = groups.Select(group => new CampaignGroup
             {
-                Name = name, PostId = postId, ScheduledFor = schedule,
-                Targets = groups.Select(group => new CampaignGroup
-                {
-                    SocialGroupId = group.Id, GroupName = group.Name, GroupUrl = group.Url
-                }).ToList()
-            });
+                SocialGroupId = group.Id, GroupName = group.Name, GroupUrl = group.Url
+            }).ToList();
+            db.Campaigns.Add(campaign);
         });
+        return campaign.Id;
     }
 
     public Task SaveGroupReviewAsync(int groupId, string reviewedUrl, GroupPostingAccess access, string rules)
