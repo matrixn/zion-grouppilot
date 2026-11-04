@@ -1,5 +1,10 @@
 # Progres GroupPilot
 
+## 0.00.11 · Import din pagini publice Facebook
+
+- [x] Detectarea permalinkurilor directe și a postărilor din carduri fără marcajul anterior.
+- [ ] Verificare live în sesiunea WebView2 de pe pagina ZionFood.
+
 ## 0.00.10 · Versiune în bara de titlu
 
 - [x] Versiunea este citită din metadatele buildului și afișată în titlul ferestrei.

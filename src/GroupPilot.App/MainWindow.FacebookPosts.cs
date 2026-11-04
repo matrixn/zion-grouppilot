@@ -30,29 +30,72 @@ public sealed partial class MainWindow
                     if (location.href !== expectedUrl)
                         return null;
                     const main = document.querySelector('main, [role="main"]');
-                    if (!main)
-                        return { Rows: [], Height: 0, AtBottom: false };
-                    const selector = '[role="article"], [data-pagelet^="FeedUnit"]';
-                    const cards = Array.from(main.querySelectorAll(selector))
-                        .filter(card => !card.parentElement.closest(selector) && card.getClientRects().length);
-                    const rows = cards.slice(0, 40).map(card => {
-                            const links = Array.from(card.querySelectorAll('a[href]')).filter(link => {
-                                if (!(link instanceof HTMLAnchorElement))
-                                    return false;
-                                const url = new URL(link.href);
-                                return (url.hostname === 'facebook.com' || url.hostname.endsWith('.facebook.com'))
-                                    && !url.searchParams.has('comment_id') && !url.searchParams.has('reply_comment_id')
-                                    && (/\/(posts|videos|reel|permalink|share)\/[^/]+/i.test(url.pathname)
-                                        || (/\/(story\.php|permalink\.php|photo(?:\.php)?|watch)\/?$/i.test(url.pathname)
-                                            && ['story_fbid', 'fbid', 'v'].some(key => url.searchParams.has(key))));
-                            });
-                            const permalink = links.find(link => link.querySelector('time, abbr') || link.closest('time, abbr'))
-                                ?? links.find(link => !link.closest('[data-ad-preview="message"], [data-ad-comet-preview="message"]'));
-                            const body = card.querySelector('[data-ad-preview="message"], [data-ad-comet-preview="message"]')
-                                ?.innerText?.trim() ?? '';
-                            return { Url: permalink?.href ?? '', Body: body.slice(0, 4000) };
-                        });
-                    let scroller = cards[0]?.parentElement ?? main;
+                    const root = main ?? document;
+                    const pageName = location.pathname.split('/').filter(Boolean)[0]?.toLowerCase();
+                    const cardSelector = 'article, [role="article"], [data-pagelet^="FeedUnit"]';
+                    const messageSelector = '[data-ad-preview="message"], [data-ad-comet-preview="message"], [data-ad-rendering-role="story_message"]';
+                    const rows = [];
+                    const seen = new Set();
+                    let firstPost = null;
+                    const cards = new Map();
+                    for (const link of root.querySelectorAll('a[href]')) {
+                        if (!(link instanceof HTMLAnchorElement) || !link.getClientRects().length)
+                            continue;
+                        const url = new URL(link.href);
+                        if (url.protocol !== 'https:' ||
+                            !(url.hostname === 'facebook.com' || url.hostname.endsWith('.facebook.com')) ||
+                            url.searchParams.has('comment_id') || url.searchParams.has('reply_comment_id') ||
+                            link.closest(messageSelector))
+                            continue;
+
+                        const parts = url.pathname.split('/').filter(Boolean);
+                        const ownedPost = parts.length === 3 && parts[0].toLowerCase() === pageName
+                            && ['posts', 'videos'].includes(parts[1]) && /^[a-z0-9_-]+$/i.test(parts[2]);
+                        const postLink = ownedPost || (
+                            /\/(posts|videos|reel|permalink|share)\/[^/]+/i.test(url.pathname)
+                            || (/\/(story\.php|permalink\.php|photo(?:\.php)?|watch)\/?$/i.test(url.pathname)
+                                && ['story_fbid', 'fbid', 'v'].some(key => url.searchParams.has(key))));
+                        if (!postLink || seen.has(url.href))
+                            continue;
+
+                        const card = link.closest(cardSelector);
+                        const timestamp = link.matches('[data-ad-rendering-role="timestamp"]')
+                            || link.querySelector('time, abbr') || link.closest('time, abbr');
+                        if (!ownedPost && !(card && (main || timestamp)) && !(main && timestamp))
+                            continue;
+
+                        let message = card?.querySelector(messageSelector);
+                        if (!card) {
+                            for (let parent = link.parentElement, depth = 0;
+                                parent && parent !== main && depth < 7; parent = parent.parentElement, depth++) {
+                                const messages = parent.querySelectorAll(messageSelector);
+                                if (messages.length > 1)
+                                    break;
+                                if (messages.length === 1) {
+                                    message = messages[0];
+                                    break;
+                                }
+                            }
+                        }
+                        firstPost ??= card ?? link;
+                        seen.add(url.href);
+                        const row = { Url: url.href, Body: (message?.innerText?.trim() ?? '').slice(0, 4000) };
+                        const previous = card && cards.get(card);
+                        const rank = timestamp ? 2 : ownedPost ? 1 : 0;
+                        if (previous) {
+                            if (rank > previous.rank) {
+                                rows[previous.index] = row;
+                                previous.rank = rank;
+                            }
+                            continue;
+                        }
+                        if (card)
+                            cards.set(card, { index: rows.length, rank });
+                        rows.push(row);
+                        if (rows.length === 60)
+                            break;
+                    }
+                    let scroller = firstPost?.parentElement ?? main;
                     while (scroller && !(/auto|scroll|overlay/.test(getComputedStyle(scroller).overflowY)
                         && scroller.scrollHeight > scroller.clientHeight + 2))
                         scroller = scroller.parentElement;
@@ -92,7 +135,7 @@ public sealed partial class MainWindow
         }
 
         if (latest.Count == 0)
-            throw new ArgumentException("No post links found. Open the profile's Posts tab and wait for the feed to load.");
+            throw new ArgumentException("No post links were visible. If Facebook shows a sign-in prompt, sign in here first. Otherwise open the Page's Posts tab and retry.");
 
         var known = model.Posts.Where(post => post.Kind == PostKind.Existing).Select(post => Validation.FacebookPostImportUrl(post.Url))
             .OfType<string>().ToHashSet();
