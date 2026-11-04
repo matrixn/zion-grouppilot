@@ -1,5 +1,17 @@
 # Progres GroupPilot
 
+## 0.00.18 · Editare, pornire manuală și instanță unică
+
+- [x] Campanii fără dată de început și opțiune de rulare înaintea datei programate.
+- [x] Editarea campaniilor cu păstrarea istoricului și a rundelor anterioare.
+- [x] Eliminarea confirmării intermediare la pornirea unei ținte noi și mesaje vizibile pentru pregătirea distribuirii.
+- [x] Instanță unică prin Windows App SDK, cu redirecționarea activării.
+- [x] Build x64 fără avertismente sau erori; 37 de teste xUnit trecute; modelul EF corespunde migrărilor.
+- [x] Lansare Windows verificată: a doua lansare se închide, iar procesul și fereastra inițiale rămân active.
+- [x] Editorul Facebook a fost deschis în verificarea live. Bara de campanie a fost compactată și detectarea editorului extinsă ulterior.
+- [ ] Reverificarea live a inserării linkului cu ultima variantă de detectare a editorului Facebook.
+- [ ] Verificarea trimiterii efective într-un grup Facebook autorizat.
+
 ## 0.00.17 · Campanii recurente și formular organizat
 
 - [x] Formular pe secțiuni numerotate, cu selectori delimitați și acțiuni de salvare vizibile permanent.

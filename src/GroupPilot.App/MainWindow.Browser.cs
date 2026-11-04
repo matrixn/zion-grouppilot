@@ -17,6 +17,8 @@ public sealed partial class MainWindow
     private TextBlock? browserContext;
     private Button? reviewButton;
     private Button? outcomeButton;
+    private InfoBar? sharingBanner;
+    private Panel? browserImports;
     private Button? importGroupsButton;
     private Button? syncGroupsButton;
     private bool pageLoaded;
@@ -80,6 +82,16 @@ public sealed partial class MainWindow
         outcomeButton!.IsEnabled = target is not null;
         outcomeButton.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
         prepareShareButton!.Visibility = target is null ? Visibility.Collapsed : Visibility.Visible;
+        sharingBanner!.IsOpen = target is not null;
+        UpdateCampaignBrowserLayout();
+        if (target is { } share)
+        {
+            var campaign = model.Campaigns.Single(item => item.Id == share.CampaignId);
+            var selectedPost = model.Posts.Single(item => item.Id == campaign.PostId);
+            sharingBanner.Title = $"Sharing to {group?.Name}";
+            sharingBanner.Message = $"{selectedPost.Title} — opening the group editor. Confirm the submission in Facebook to finish.";
+            sharingBanner.Severity = InfoBarSeverity.Informational;
+        }
         browserContext!.Text = target is not null ? $"Campaign target · {group?.Name} · Submit manually, then record the outcome." :
             group is not null ? $"Group review · {group.Name}" :
             "Browse Facebook or import a post from its permalink.";
@@ -170,6 +182,7 @@ public sealed partial class MainWindow
         });
         FacebookAction(actions, "Open in default browser", () => OpenDefaultBrowserAsync(requestedFacebookUrl));
         var imports = ResponsiveGrid(toolbar, 4, 155);
+        browserImports = imports;
         FacebookAction(imports, "Import posts", ImportCurrentPostAsync);
         FacebookAction(actions, "Import current post", () =>
         {
@@ -186,9 +199,12 @@ public sealed partial class MainWindow
         UpdateGroupActions();
         ToolTipService.SetToolTip(syncGroupsButton, "Use Open my groups first. Sync runs only on your Facebook groups list.");
         reviewButton = FacebookAction(actions, "Record group review", ReviewCurrentGroupAsync);
-        prepareShareButton = FacebookAction(toolbar, "Prepare selected share", PrepareShareComposerAsync);
+        sharingBanner = new InfoBar { IsClosable = false, IsOpen = false };
+        toolbar.Children.Add(sharingBanner);
+        var sharingActions = ResponsiveGrid(toolbar, 2, 180);
+        prepareShareButton = FacebookAction(sharingActions, "Prepare selected share", PrepareShareComposerAsync);
         prepareShareButton.Visibility = Visibility.Collapsed;
-        outcomeButton = FacebookAction(toolbar, "Record campaign outcome", RecordBrowserOutcomeAsync);
+        outcomeButton = FacebookAction(sharingActions, "Record campaign outcome", RecordBrowserOutcomeAsync);
         outcomeButton.Visibility = Visibility.Collapsed;
         reviewButton.IsEnabled = false;
         outcomeButton.IsEnabled = false;
@@ -198,6 +214,17 @@ public sealed partial class MainWindow
         layout.Children.Add(view);
         facebookPage = layout;
         browser = view;
+    }
+
+    private void UpdateCampaignBrowserLayout()
+    {
+        var active = publishingTarget is not null;
+        if (browserImports is not null)
+            browserImports.Visibility = active ? Visibility.Collapsed : Visibility.Visible;
+        if (browserStatus is not null)
+            browserStatus.Visibility = active ? Visibility.Collapsed : Visibility.Visible;
+        if (browserContext is not null)
+            browserContext.Visibility = active ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private Button FacebookAction(Panel panel, string title, Func<Task> action)
@@ -256,6 +283,11 @@ public sealed partial class MainWindow
             UpdateGroupActions();
             if (!pageLoaded)
             {
+                if (sharingBanner is not null && publishingTarget is not null)
+                {
+                    sharingBanner.Severity = InfoBarSeverity.Warning;
+                    sharingBanner.Message = "Facebook could not load the group. Check your connection and reload the page.";
+                }
                 browserStatus!.Text = $"Facebook could not load ({args.WebErrorStatus}).";
                 return;
             }
@@ -265,6 +297,11 @@ public sealed partial class MainWindow
             if (Validation.IsFacebookLoginPage(source))
             {
                 sessionConfirmed = false;
+                if (sharingBanner is not null && publishingTarget is not null)
+                {
+                    sharingBanner.Severity = InfoBarSeverity.Warning;
+                    sharingBanner.Message = "Sign in or complete the Facebook security check, then open the requested group.";
+                }
                 browserStatus!.Text = "Complete sign-in or the security check in Facebook.";
             }
             else

@@ -86,6 +86,8 @@ public sealed partial class MainWindow
             ShowCampaignDetails(selected);
             return RunCampaignNowAsync(selected);
         });
+        Action(actions, "Edit selected campaign", () => CampaignFormAsync(
+            (campaigns.SelectedItem as ListViewItem)?.Tag as Campaign ?? throw new ArgumentException("Select a campaign.")));
         Action(actions, "Delete selected campaign", () => DeleteCampaignAsync(
             (campaigns.SelectedItem as ListViewItem)?.Tag as Campaign ?? throw new ArgumentException("Select a campaign.")));
         Action(actions, "Open selected campaign", () =>
@@ -95,24 +97,29 @@ public sealed partial class MainWindow
         });
     }
 
-    private Task CreateCampaignAsync()
+    private Task CreateCampaignAsync() => CampaignFormAsync(null);
+
+    private Task CampaignFormAsync(Campaign? source)
     {
-        var groups = model.Groups.Where(group => group.Enabled).ToArray();
-        var library = model.Posts.Where(IsLibraryPost).ToArray();
+        var selectedGroupIds = source?.Targets.Select(target => target.SocialGroupId).OfType<int>().ToHashSet() ?? [];
+        var groups = model.Groups.Where(group => group.Enabled || selectedGroupIds.Contains(group.Id)).ToArray();
+        var library = model.Posts.Where(post => IsLibraryPost(post) || post.Id == source?.PostId).ToArray();
         if (library.Length == 0 || groups.Length == 0)
             throw new ArgumentException("Import a Facebook post and enable at least one group first.");
 
-        var page = Page("New campaign", "Choose a post, select groups and set the sharing schedule.");
+        var page = Page(source is null ? "New campaign" : "Edit campaign", "Choose a post, select groups and set the sharing schedule.");
         var overview = Label("1 Campaign   →   2 Facebook post   →   3 Target groups   →   4 Schedule");
         overview.Style = ResourceStyle("WorkspaceDescriptionStyle");
         page.Children.Add(overview);
         var introduction = Section(page, "1 · Campaign");
-        var name = Input("Campaign name");
+        var name = Input("Campaign name", source?.Name ?? "");
         name.PlaceholderText = "For example, ZionFood weekly promotion";
         introduction.Children.Add(name);
 
         var postSection = Section(page, "2 · Facebook post");
         var post = CreateCampaignPostPicker(library);
+        if (source is not null)
+            post.SelectedItem = post.Items.Cast<ListViewItem>().Single(item => ((Post)item.Tag).Id == source.PostId);
         post.MaxHeight = 240;
         postSection.Children.Add(post);
         var selection = Label("");
@@ -157,6 +164,8 @@ public sealed partial class MainWindow
                 selectedIds.Add(added.Id);
             groupCount.Text = $"{selectedIds.Count} of {groups.Length} groups selected";
         };
+        foreach (var group in groups.Where(group => selectedGroupIds.Contains(group.Id)))
+            targets.SelectedItems.Add(group);
         search.TextChanged += (_, _) =>
         {
             filtering = true;
@@ -168,25 +177,35 @@ public sealed partial class MainWindow
 
         var scheduling = Section(page, "4 · Schedule and pause");
         var recurrence = Choices("Repeat campaign", Enum.GetValues<CampaignRecurrence>()
-            .Select(value => new RecurrenceChoice(value)).ToArray(), new RecurrenceChoice(CampaignRecurrence.Once));
+            .Select(value => new RecurrenceChoice(value)).ToArray(), new RecurrenceChoice(source?.Recurrence ?? CampaignRecurrence.Once));
+        var useDate = new CheckBox { Content = "Set a start date and time", IsChecked = source?.ScheduledFor is not null };
         var date = new CalendarDatePicker
         {
-            Header = "First date", PlaceholderText = "Choose a start date",
+            Header = "First date", PlaceholderText = "Manual start", Date = source?.ScheduledFor?.ToLocalTime(),
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
         var time = new TimePicker
         {
-            Header = "Time", SelectedTime = DateTime.Now.TimeOfDay, ClockIdentifier = "24HourClock",
+            Header = "Time", SelectedTime = source?.ScheduledFor?.ToLocalTime().TimeOfDay
+                ?? new TimeSpan(DateTime.Now.Hour, DateTime.Now.Minute, 0), ClockIdentifier = "24HourClock",
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
-        var pause = CampaignPauseInput(120);
+        var pause = CampaignPauseInput(source?.PauseSeconds ?? 120);
         scheduling.Children.Add(recurrence);
+        scheduling.Children.Add(useDate);
         ResponsiveGrid(scheduling, 3, 180, date, time, pause);
         var explanation = Label("");
         scheduling.Children.Add(explanation);
         void UpdateSchedule()
         {
             var value = (recurrence.SelectedItem as RecurrenceChoice)?.Value ?? CampaignRecurrence.Once;
+            date.IsEnabled = useDate.IsChecked == true;
+            time.IsEnabled = useDate.IsChecked == true;
+            if (useDate.IsChecked != true)
+            {
+                explanation.Text = "Save without a start date and run whenever you choose. Recurring dates are anchored to the first run.";
+                return;
+            }
             explanation.Text = value switch
             {
                 CampaignRecurrence.Once => "Choose a start date or use Save and run now. The pause is counted after a share, before opening a different group.",
@@ -195,10 +214,12 @@ public sealed partial class MainWindow
                     "Runs are spaced evenly within each calendar month at the selected time. The first run uses your start date.",
                 _ => "Repeats from the start date at the selected local time."
             };
-            if (value != CampaignRecurrence.Once && date.Date is null)
+            if (date.Date is null)
                 date.Date = DateTimeOffset.Now;
         }
         recurrence.SelectionChanged += (_, _) => UpdateSchedule();
+        useDate.Checked += (_, _) => UpdateSchedule();
+        useDate.Unchecked += (_, _) => UpdateSchedule();
         UpdateSchedule();
         scheduling.Children.Add(Label("Keep GroupPilot open for scheduled reminders. Confirm each submission in Facebook."));
 
@@ -221,13 +242,24 @@ public sealed partial class MainWindow
                 throw new ArgumentException("Enter a whole number of seconds from 1 to 86400.");
             var repeat = (recurrence.SelectedItem as RecurrenceChoice)?.Value ?? CampaignRecurrence.Once;
             DateTimeOffset? scheduled = null;
-            if (date.Date is { } day)
+            if (useDate.IsChecked == true && date.Date is { } day)
                 scheduled = CampaignSchedule.Resolve(day.Date + time.SelectedTime.GetValueOrDefault(), TimeZoneInfo.Local);
-            if (repeat != CampaignRecurrence.Once && scheduled is null)
-                throw new ArgumentException("Choose a first date for the recurring campaign.");
+            if (useDate.IsChecked == true && scheduled is null)
+                throw new ArgumentException("Choose a first date or turn off the scheduled start.");
 
             var campaignId = await storage.SaveCampaignAsync(name.Text.Trim(), chosen.Id, selectedIds.ToArray(),
-                scheduled, (int)pause.Value, repeat, TimeZoneInfo.Local.Id);
+                scheduled, (int)pause.Value, repeat, TimeZoneInfo.Local.Id, source?.Id, source?.RunNumber);
+            if (source is not null && publishingTarget?.CampaignId == source.Id)
+            {
+                publishingTarget = null;
+                UpdateCampaignBrowserLayout();
+                if (sharingBanner is not null)
+                    sharingBanner.IsOpen = false;
+                if (prepareShareButton is not null)
+                    prepareShareButton.Visibility = Visibility.Collapsed;
+                if (outcomeButton is not null)
+                    outcomeButton.Visibility = Visibility.Collapsed;
+            }
             await model.ReloadAsync();
             var campaign = model.Campaigns.Single(item => item.Id == campaignId);
             ShowCampaignDetails(campaign);
@@ -283,6 +315,7 @@ public sealed partial class MainWindow
             targetSection.Children.Add(Label("This campaign has no existing Facebook post to share. You can still record its outcomes."));
         }
         Action(actions, "Record selected outcome", () => RecordOutcomeAsync(campaign, Selected()));
+        Action(page, "Edit campaign", () => CampaignFormAsync(campaign));
         Action(page, "Delete campaign", () => DeleteCampaignAsync(campaign));
         Action(page, "Back to campaigns", () =>
         {
@@ -345,6 +378,9 @@ public sealed partial class MainWindow
         if (publishingTarget?.CampaignId == campaign.Id)
         {
             publishingTarget = null;
+            UpdateCampaignBrowserLayout();
+            if (sharingBanner is not null)
+                sharingBanner.IsOpen = false;
             if (prepareShareButton is not null)
                 prepareShareButton.Visibility = Visibility.Collapsed;
             if (outcomeButton is not null)
@@ -366,7 +402,13 @@ public sealed partial class MainWindow
 
     private async Task RunCampaignNowAsync(Campaign campaign, int? excludeTarget = null)
     {
-        await storage.PrepareCampaignRunAsync(campaign.Id);
+        if (campaign.Targets.Count > 0 && campaign.Targets.All(target => target.Status is TargetStatus.Published or TargetStatus.Skipped))
+        {
+            if (await Dialog("Run this campaign again?", Label("This starts a new round for the selected groups now, including when the next run is scheduled for later."),
+                "Run now").ShowAsync() != ContentDialogResult.Primary)
+                return;
+        }
+        await storage.PrepareCampaignRunAsync(campaign.Id, runNow: true);
         await model.ReloadAsync();
         campaign = model.Campaigns.Single(item => item.Id == campaign.Id && !item.IsArchived);
         var post = model.Posts.Single(item => item.Id == campaign.PostId);
@@ -392,20 +434,12 @@ public sealed partial class MainWindow
         if (!await WaitForSharePauseAsync(target.GroupUrl))
             return;
         var group = model.Groups.Single(item => item.Id == target.SocialGroupId);
-        var panel = new StackPanel { Spacing = 8 };
         if (target.Status == TargetStatus.InProgress)
         {
-            panel.Children.Add(Label("This target was left in progress. Check Facebook for an existing submission before posting again. If it was already submitted, record its outcome."));
+            if (await Dialog("Resume interrupted share?", Label("Check whether this post was already submitted in Facebook before preparing it again."),
+                "Open group").ShowAsync() != ContentDialogResult.Primary)
+                return;
         }
-        panel.Children.Add(Label("Check your account, the group rules and permission to post in Facebook. GroupPilot will try to insert the selected post link in the group editor. Review it and confirm the submission in Facebook."));
-        panel.Children.Add(Label(group.ReviewedAt is { } reviewed
-            ? $"Last manual review: {group.PostingAccess} · {reviewed.ToLocalTime():g}"
-            : "Posting access has not been reviewed."));
-        if (group.Rules.Length > 0)
-            panel.Children.Add(Label($"Group rules: {group.Rules}"));
-        if (await Dialog($"Prepare for {target.GroupName}", new ScrollViewer { Content = panel, MaxHeight = 400 }, "Copy and open").ShowAsync()
-            != ContentDialogResult.Primary)
-            return;
 
         var data = new DataPackage();
         data.SetText(post.Url);
@@ -454,6 +488,9 @@ public sealed partial class MainWindow
         if (publishingTarget?.TargetId == target.Id)
         {
             publishingTarget = null;
+            UpdateCampaignBrowserLayout();
+            if (sharingBanner is not null)
+                sharingBanner.IsOpen = false;
             if (prepareShareButton is not null)
                 prepareShareButton.Visibility = Visibility.Collapsed;
             if (outcomeButton is not null)

@@ -53,7 +53,7 @@ public sealed partial class MainWindow
         FacebookHost.IsEnabled = true;
         try
         {
-            for (var pass = 0; pass < 6; pass++)
+            for (var pass = 0; pass < 20; pass++)
             {
                 if (browser != view || publishingTarget != context || !pageLoaded || core.Source != source)
                     return;
@@ -69,10 +69,26 @@ public sealed partial class MainWindow
                             .some(element => restricted.test(element.innerText)))
                             return 'restricted';
                         const postButton = /^(post|publish|public[ăa]|posteaz[ăa])$/i;
-                        const postDialogs = dialogs.filter(dialog => Array.from(dialog.querySelectorAll('[role="button"],button'))
-                            .some(button => visible(button) && postButton.test((button.innerText || button.getAttribute('aria-label') || '').trim())));
-                        const editors = postDialogs.flatMap(dialog =>
-                            Array.from(dialog.querySelectorAll('[contenteditable="true"][role="textbox"]')).filter(visible));
+                        const createHeading = /^(create post|create a post|creeaz[ăa] o postare|creare postare)$/i;
+                        const postDialogs = dialogs.filter(dialog =>
+                            Array.from(dialog.querySelectorAll('[role="button"],button')).some(button =>
+                                visible(button) && postButton.test((button.getAttribute('aria-label') || button.innerText || '').trim()))
+                            || Array.from(dialog.querySelectorAll('[role="heading"],h1,h2')).some(heading =>
+                                visible(heading) && createHeading.test(heading.innerText.trim())));
+                        const expected = new URL(postUrl);
+                        const hasPreview = postDialogs.some(dialog =>
+                            Array.from(dialog.querySelectorAll('a[href]')).some(link => {
+                                const url = new URL(link.href, location.href);
+                                return url.protocol === 'https:' &&
+                                    (url.hostname === 'facebook.com' || url.hostname.endsWith('.facebook.com')) &&
+                                    url.pathname.replace(/\/$/, '') === expected.pathname.replace(/\/$/, '') &&
+                                    ['story_fbid', 'fbid', 'v', 'id'].every(key =>
+                                        !expected.searchParams.has(key) || url.searchParams.get(key) === expected.searchParams.get(key));
+                            }));
+                        if (hasPreview)
+                            return 'ready';
+                        const editors = Array.from(new Set(postDialogs.flatMap(dialog =>
+                            Array.from(dialog.querySelectorAll('[contenteditable="true"][role="textbox"], [contenteditable="true"][data-lexical-editor="true"]')).filter(visible))));
                         if (editors.length === 1) {
                             const editor = editors[0];
                             const current = editor.innerText.trim();
@@ -80,38 +96,55 @@ public sealed partial class MainWindow
                                 return 'ready';
                             if (current.length > 0)
                                 return 'occupied';
+                            if (editor.dataset.groupPilotUrl === postUrl)
+                                return 'waiting';
                             editor.focus();
-                            if (!document.execCommand('insertText', false, postUrl))
-                                return 'manual';
-                            return editor.innerText.trim() === postUrl ? 'ready' : 'manual';
+                            editor.dataset.groupPilotUrl = postUrl;
+                            document.execCommand('insertText', false, postUrl);
+                            return editor.innerText.trim() === postUrl ? 'ready' : 'waiting';
                         }
                         if (dialogs.length > 0)
                             return 'manual';
                         const buttons = Array.from((document.querySelector('[role="main"]') ?? document)
                             .querySelectorAll('[role="button"],button')).filter(visible);
-                        const labels = /^(write something|scrie ceva|create a post|creeaz[ăa] o postare)([.\s…]|$)/i;
-                        const compose = buttons.filter(button => labels.test((button.innerText || button.getAttribute('aria-label') || '').trim()));
+                        const labels = /^(write something|scrie ceva|scrie o postare|posteaz[ăa] ceva|create a post|creeaz[ăa] o postare)([.\s…]|$)/i;
+                        const matches = buttons.filter(button => labels.test((button.innerText || button.getAttribute('aria-label') || '').trim()));
+                        const compose = matches.filter(button => !matches.some(other => other !== button && button.contains(other)));
                         if (compose.length !== 1)
-                            return 'manual';
+                            return 'loading';
                         compose[0].click();
                         return 'opening';
                     })
                     """ + $"({JsonSerializer.Serialize(source)}, {JsonSerializer.Serialize(post.Url)})");
                 var status = JsonSerializer.Deserialize<string>(result);
-                if (status == "opening")
+                Serilog.Log.Information("Share preparation {Status} for target {TargetId}", status, target.Id);
+                if (status is "opening" or "loading" or "waiting")
                 {
                     await Task.Delay(600);
                     continue;
                 }
-                if (browserStatus is not null)
-                    browserStatus.Text = status switch
+                var message = status switch
                     {
                         "ready" => "The selected Facebook post link is ready. Review the preview and confirm Post in Facebook.",
                         "restricted" => "Facebook reported a restriction. Stop sharing and follow the message shown by Facebook.",
                         "occupied" => "The editor already contains text. Review it before posting.",
                         _ => "Open the group's post editor and choose Prepare selected share, or paste the copied link."
                     };
+                if (browserStatus is not null)
+                    browserStatus.Text = message;
+                if (sharingBanner is not null)
+                {
+                    sharingBanner.IsOpen = true;
+                    sharingBanner.Message = message;
+                    sharingBanner.Severity = status == "ready" ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+                }
                 return;
+            }
+            if (sharingBanner is not null)
+            {
+                sharingBanner.IsOpen = true;
+                sharingBanner.Severity = InfoBarSeverity.Warning;
+                sharingBanner.Message = "The group editor could not be opened automatically. Open Write something in Facebook, then choose Prepare selected share. The post link is on the clipboard.";
             }
         }
         finally

@@ -21,7 +21,7 @@ public static class CampaignSchedule
         if (campaign.Recurrence == CampaignRecurrence.Once)
             return null;
         var zone = TimeZoneInfo.FindSystemTimeZoneById(campaign.TimeZoneId);
-        var anchor = TimeZoneInfo.ConvertTime(campaign.ScheduledFor
+        var anchor = TimeZoneInfo.ConvertTime((campaign.RecurrenceAnchorAt ?? campaign.ScheduledFor)
             ?? throw new ArgumentException("Recurring campaigns need a start date."), zone).DateTime;
         var localAfter = TimeZoneInfo.ConvertTime(after, zone).DateTime;
         var days = campaign.Recurrence switch

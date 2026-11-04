@@ -81,6 +81,7 @@ public sealed class Campaign
     public string TimeZoneId { get; set; } = "";
     public DateTimeOffset? NextRunAt { get; set; }
     public int RunNumber { get; set; } = 1;
+    public DateTimeOffset? RecurrenceAnchorAt { get; set; }
     public bool IsArchived { get; set; }
     public List<CampaignGroup> Targets { get; set; } = [];
     public override string ToString() => $"{Name} · {Targets.Count} groups" +
@@ -94,6 +95,7 @@ public sealed class CampaignGroup
     public string GroupName { get; set; } = "";
     public string GroupUrl { get; set; } = "";
     public TargetStatus Status { get; set; }
+    public bool IsExcluded { get; set; }
     public override string ToString() => $"{GroupName} · {Status}";
 }
 

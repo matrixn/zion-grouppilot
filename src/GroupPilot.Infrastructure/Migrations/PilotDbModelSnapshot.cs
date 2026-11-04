@@ -66,6 +66,9 @@ namespace GroupPilot.Infrastructure.Migrations
                     b.Property<int>("Recurrence")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTimeOffset?>("RecurrenceAnchorAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("RunNumber")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
@@ -101,6 +104,9 @@ namespace GroupPilot.Infrastructure.Migrations
                     b.Property<string>("GroupUrl")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsExcluded")
+                        .HasColumnType("INTEGER");
 
                     b.Property<int?>("SocialGroupId")
                         .HasColumnType("INTEGER");

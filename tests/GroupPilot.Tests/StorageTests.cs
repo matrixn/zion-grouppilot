@@ -356,6 +356,81 @@ public sealed class StorageTests : IDisposable
         Assert.Equal(2, await storage.QueryAsync(db => db.Campaigns.Select(item => item.RunNumber).SingleAsync()));
     }
 
+    [Fact]
+    public async Task ManualRecurringCampaignUsesFirstRunAsAnchorAndCanRunEarly()
+    {
+        var clock = new ManualClock();
+        var storage = Open(clock);
+        await storage.InitializeAsync();
+        var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/test/" };
+        await storage.SaveGroupAsync(group, "");
+        var post = new Post { Title = "Post", Kind = PostKind.Existing, Url = "https://facebook.com/page/posts/42" };
+        await storage.SavePostAsync(post);
+        var id = await storage.SaveCampaignAsync("Manual", post.Id, [group.Id], null, 60,
+            CampaignRecurrence.Daily, TimeZoneInfo.Utc.Id);
+        Assert.Null(await storage.QueryAsync(db => db.Campaigns.Select(item => item.NextRunAt).SingleAsync()));
+        await storage.PrepareCampaignRunAsync(id, runNow: true);
+        var target = await storage.QueryAsync(db => db.Targets.SingleAsync());
+        await storage.BeginTargetAsync(target.Id, 1);
+        await storage.RecordAttemptAsync(target.Id, TargetStatus.Published, "https://facebook.com/groups/test/posts/123", 1);
+        Assert.Equal(clock.Now.AddDays(1), await storage.QueryAsync(db => db.Campaigns.Select(item => item.NextRunAt).SingleAsync()));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.PrepareCampaignRunAsync(id));
+        await storage.PrepareCampaignRunAsync(id, runNow: true);
+        Assert.Equal(2, await storage.QueryAsync(db => db.Campaigns.Select(item => item.RunNumber).SingleAsync()));
+        Assert.Equal(TargetStatus.Pending, await storage.QueryAsync(db => db.Targets.Select(item => item.Status).SingleAsync()));
+        Assert.Equal(1, await storage.QueryAsync(db => db.Attempts.CountAsync()));
+    }
+
+    [Fact]
+    public async Task EditingCampaignKeepsPreviousAttemptsAndUpdatesActiveGroups()
+    {
+        var clock = new ManualClock();
+        var storage = Open(clock);
+        await storage.InitializeAsync();
+        var first = new SocialGroup { Name = "First", Url = "https://facebook.com/groups/first/" };
+        var second = new SocialGroup { Name = "Second", Url = "https://facebook.com/groups/second/" };
+        await storage.SaveGroupAsync(first, "");
+        await storage.SaveGroupAsync(second, "");
+        var post = new Post { Title = "Post", Kind = PostKind.Existing, Url = "https://facebook.com/page/posts/42" };
+        await storage.SavePostAsync(post);
+        var id = await storage.SaveCampaignAsync("Original", post.Id, [first.Id], clock.Now.AddDays(1));
+        var target = await storage.QueryAsync(db => db.Targets.SingleAsync());
+        await storage.RecordAttemptAsync(target.Id, TargetStatus.Failed, "");
+        Assert.Equal(id, await storage.SaveCampaignAsync("Edited", post.Id, [second.Id], null, 300,
+            CampaignRecurrence.Weekly, TimeZoneInfo.Utc.Id, id, 1));
+        var saved = await storage.QueryAsync(db => db.Campaigns.Include(item => item.Targets).SingleAsync());
+        Assert.Equal("Edited", saved.Name);
+        Assert.Null(saved.ScheduledFor);
+        Assert.Equal(300, saved.PauseSeconds);
+        Assert.True(saved.Targets.Single(item => item.Id == target.Id).IsExcluded);
+        Assert.Equal(second.Id, saved.Targets.Single(item => !item.IsExcluded).SocialGroupId);
+        Assert.Equal(target.Id, await storage.QueryAsync(db => db.Attempts.Select(item => item.CampaignGroupId).SingleAsync()));
+        await Assert.ThrowsAsync<ArgumentException>(() => storage.BeginTargetAsync(target.Id));
+    }
+
+    [Fact]
+    public async Task ReplacingPostInUsedCampaignStartsSeparateRound()
+    {
+        var storage = Open();
+        await storage.InitializeAsync();
+        var group = new SocialGroup { Name = "Group", Url = "https://facebook.com/groups/test/" };
+        await storage.SaveGroupAsync(group, "");
+        var first = new Post { Title = "First", Kind = PostKind.Existing, Url = "https://facebook.com/page/posts/1" };
+        var second = new Post { Title = "Second", Kind = PostKind.Existing, Url = "https://facebook.com/page/posts/2" };
+        await storage.SavePostAsync(first);
+        await storage.SavePostAsync(second);
+        var id = await storage.SaveCampaignAsync("Campaign", first.Id, [group.Id], null);
+        var target = await storage.QueryAsync(db => db.Targets.SingleAsync());
+        await storage.RecordAttemptAsync(target.Id, TargetStatus.Published, "https://facebook.com/groups/test/posts/123", 1);
+        await storage.SaveCampaignAsync("Changed post", second.Id, [group.Id], null, 120,
+            CampaignRecurrence.Once, TimeZoneInfo.Utc.Id, id, 1);
+        var campaign = await storage.QueryAsync(db => db.Campaigns.Include(item => item.Targets).SingleAsync());
+        Assert.Equal(2, campaign.RunNumber);
+        Assert.True(campaign.Targets.Single(item => item.Id == target.Id).IsExcluded);
+        Assert.Equal(TargetStatus.Pending, campaign.Targets.Single(item => !item.IsExcluded).Status);
+        Assert.Equal(1, await storage.QueryAsync(db => db.Attempts.Select(item => item.RunNumber).SingleAsync()));
+    }
+
     private sealed class ManualClock : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = new(2026, 11, 4, 8, 0, 0, TimeSpan.Zero);

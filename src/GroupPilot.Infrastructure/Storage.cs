@@ -262,34 +262,83 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         return (added, skipped);
     }
 
-    public async Task<int> SaveCampaignAsync(string name, int postId, IReadOnlyCollection<int> groupIds, DateTimeOffset? schedule, int pauseSeconds = 120, CampaignRecurrence recurrence = CampaignRecurrence.Once, string? timeZoneId = null)
+    public async Task<int> SaveCampaignAsync(string name, int postId, IReadOnlyCollection<int> groupIds,
+        DateTimeOffset? schedule, int pauseSeconds = 120, CampaignRecurrence recurrence = CampaignRecurrence.Once,
+        string? timeZoneId = null, int? campaignId = null, int? expectedRunNumber = null)
     {
-        if (string.IsNullOrWhiteSpace(name) || groupIds.Count == 0)
+        var ids = groupIds.Distinct().ToArray();
+        if (string.IsNullOrWhiteSpace(name) || ids.Length == 0)
             throw new ArgumentException("Enter a campaign name and select at least one group.");
-
         CheckPause(pauseSeconds);
         if (!Enum.IsDefined(recurrence))
             throw new ArgumentException("Choose a campaign recurrence.");
         var zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId ?? TimeZoneInfo.Local.Id);
-        if (recurrence != CampaignRecurrence.Once && schedule is null)
-            throw new ArgumentException("Choose a start date for a recurring campaign.");
-        var campaign = new Campaign
-        {
-            Name = name, PostId = postId, ScheduledFor = schedule, PauseSeconds = pauseSeconds,
-            Recurrence = recurrence, TimeZoneId = zone.Id, NextRunAt = schedule
-        };
-        await SaveAsync(async db =>
-        {
-            var groups = await db.Groups.Where(group => group.Enabled && groupIds.Contains(group.Id)).ToListAsync();
-            if (groups.Count != groupIds.Count || !await db.Posts.AnyAsync(post => post.Id == postId && !post.IsArchived))
-                throw new InvalidOperationException("The selected post or groups have changed. Reload and try again.");
 
-            campaign.Targets = groups.Select(group => new CampaignGroup
-            {
-                SocialGroupId = group.Id, GroupName = group.Name, GroupUrl = group.Url
-            }).ToList();
+        await using var db = await factory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var campaign = campaignId is { } id
+            ? await db.Campaigns.Include(item => item.Targets).SingleOrDefaultAsync(item => item.Id == id && !item.IsArchived)
+                ?? throw new ArgumentException("Campaign unavailable.")
+            : new Campaign();
+        if (expectedRunNumber is { } expected && campaign.RunNumber != expected)
+            throw new ArgumentException("This campaign changed. Reload it before saving.");
+        var groups = await db.Groups.Where(group => ids.Contains(group.Id)).ToListAsync();
+        var current = campaign.Targets.Where(target => !target.IsExcluded).ToArray();
+        if (groups.Count != ids.Length || groups.Any(group => !group.Enabled && !current.Any(target => target.SocialGroupId == group.Id)))
+            throw new ArgumentException("One of the selected groups is unavailable.");
+        var post = await db.Posts.FindAsync(postId);
+        if (post is null || (post.IsArchived && (campaignId is null || campaign.PostId != postId)))
+            throw new InvalidOperationException("The selected post is unavailable.");
+
+        var postChanged = campaignId is not null && campaign.PostId != postId;
+        var currentIds = current.Select(target => target.Id).ToArray();
+        var hasHistory = campaignId is not null && (current.Any(target => target.Status != TargetStatus.Pending)
+            || await db.Attempts.AnyAsync(attempt => currentIds.Contains(attempt.CampaignGroupId)));
+        if (postChanged && hasHistory)
+        {
+            foreach (var target in current)
+                target.IsExcluded = true;
+            campaign.RunNumber++;
+            current = [];
+        }
+        var remaining = groups.ToDictionary(group => group.Id);
+        foreach (var target in current)
+        {
+            if (target.SocialGroupId is { } groupId && remaining.TryGetValue(groupId, out var group) && group.Url == target.GroupUrl)
+                remaining.Remove(groupId);
+            else
+                target.IsExcluded = true;
+        }
+        foreach (var group in remaining.Values)
+            campaign.Targets.Add(new CampaignGroup { SocialGroupId = group.Id, GroupName = group.Name, GroupUrl = group.Url });
+
+        var scheduleChanged = campaignId is null || postChanged || campaign.ScheduledFor != schedule
+            || campaign.Recurrence != recurrence || campaign.TimeZoneId != zone.Id;
+        campaign.Name = name.Trim();
+        campaign.PostId = postId;
+        campaign.PauseSeconds = pauseSeconds;
+        campaign.Recurrence = recurrence;
+        campaign.TimeZoneId = zone.Id;
+        campaign.ScheduledFor = schedule;
+        if (scheduleChanged)
+            campaign.RecurrenceAnchorAt = schedule;
+
+        var active = campaign.Targets.Where(target => !target.IsExcluded).ToArray();
+        var complete = active.All(target => target.Status is TargetStatus.Published or TargetStatus.Skipped);
+        if (complete && scheduleChanged)
+        {
+            if (recurrence != CampaignRecurrence.Once)
+                campaign.RecurrenceAnchorAt ??= clock.GetUtcNow();
+            campaign.NextRunAt = CampaignSchedule.NextAfter(campaign, clock.GetUtcNow());
+        }
+        else if (!complete)
+        {
+            campaign.NextRunAt = active.Any(target => target.Status != TargetStatus.Pending) ? null : schedule;
+        }
+        if (campaignId is null)
             db.Campaigns.Add(campaign);
-        });
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
         return campaign.Id;
     }
 
@@ -323,20 +372,21 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
                 (nextGroupUrl == null || settings.LastShareGroupUrl != nextGroupUrl))
             .Select(settings => settings.NextShareAt).FirstOrDefaultAsync());
 
-    public async Task PrepareCampaignRunAsync(int campaignId)
+    public async Task PrepareCampaignRunAsync(int campaignId, bool runNow = false)
     {
         await using var db = await factory.CreateDbContextAsync();
         await using var transaction = await db.Database.BeginTransactionAsync();
         var campaign = await db.Campaigns.Include(item => item.Targets)
             .SingleOrDefaultAsync(item => item.Id == campaignId && !item.IsArchived)
             ?? throw new ArgumentException("Campaign unavailable.");
-        var complete = campaign.Targets.Count > 0 &&
-            campaign.Targets.All(target => target.Status is TargetStatus.Published or TargetStatus.Skipped);
-        if (complete && campaign.Recurrence != CampaignRecurrence.Once)
+        var targets = campaign.Targets.Where(target => !target.IsExcluded).ToArray();
+        var complete = targets.Length > 0 &&
+            targets.All(target => target.Status is TargetStatus.Published or TargetStatus.Skipped);
+        if (complete && (campaign.Recurrence != CampaignRecurrence.Once || runNow))
         {
-            if (campaign.NextRunAt is null || campaign.NextRunAt > clock.GetUtcNow())
+            if (!runNow && (campaign.NextRunAt is null || campaign.NextRunAt > clock.GetUtcNow()))
                 throw new ArgumentException($"The next run is scheduled for {campaign.NextRunAt?.ToLocalTime():g}.");
-            foreach (var target in campaign.Targets)
+            foreach (var target in targets)
                 target.Status = TargetStatus.Pending;
             campaign.RunNumber++;
             campaign.NextRunAt = null;
@@ -371,7 +421,7 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         await using var db = await factory.CreateDbContextAsync();
         await using var transaction = await db.Database.BeginTransactionAsync();
         var campaign = await db.Campaigns.SingleOrDefaultAsync(item =>
-            !item.IsArchived && item.Targets.Any(target => target.Id == targetId))
+            !item.IsArchived && item.Targets.Any(target => target.Id == targetId && !target.IsExcluded))
             ?? throw new ArgumentException("This campaign is no longer available.");
         if (expectedRunNumber is { } expected && campaign.RunNumber != expected)
             throw new ArgumentException("This campaign has started a new run. Reload before preparing or recording a share.");
@@ -386,6 +436,9 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         var now = clock.GetUtcNow();
         if (settings?.NextShareAt is { } next && next > now && settings.LastShareGroupUrl != target.GroupUrl)
             throw new ArgumentException($"Wait {Math.Ceiling((next - now).TotalSeconds)} seconds before opening a different group.");
+        if (campaign.Recurrence != CampaignRecurrence.Once)
+            campaign.RecurrenceAnchorAt ??= campaign.ScheduledFor ?? now;
+        campaign.NextRunAt = null;
         target.Status = TargetStatus.InProgress;
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
@@ -400,7 +453,7 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         await using var db = await factory.CreateDbContextAsync();
         await using var transaction = await db.Database.BeginTransactionAsync();
         var campaign = await db.Campaigns.SingleOrDefaultAsync(item =>
-            !item.IsArchived && item.Targets.Any(target => target.Id == targetId))
+            !item.IsArchived && item.Targets.Any(target => target.Id == targetId && !target.IsExcluded))
             ?? throw new ArgumentException("This campaign is no longer available.");
         if (expectedRunNumber is { } expected && campaign.RunNumber != expected)
             throw new ArgumentException("This campaign has started a new run. Reload before preparing or recording a share.");
@@ -429,8 +482,12 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
             PublishedUrl = status == TargetStatus.Published ? publishedUrl : ""
         });
         await db.Entry(campaign).Collection(item => item.Targets).LoadAsync();
-        if (campaign.Targets.All(item => item.Status is TargetStatus.Published or TargetStatus.Skipped))
+        if (campaign.Targets.Where(item => !item.IsExcluded).All(item => item.Status is TargetStatus.Published or TargetStatus.Skipped))
+        {
+            if (campaign.Recurrence != CampaignRecurrence.Once)
+                campaign.RecurrenceAnchorAt ??= campaign.ScheduledFor ?? now;
             campaign.NextRunAt = CampaignSchedule.NextAfter(campaign, now);
+        }
         await db.SaveChangesAsync();
         await transaction.CommitAsync();
     }

@@ -24,7 +24,7 @@ public sealed partial class PilotViewModel(Storage storage) : ObservableObject
             Posts = await db.Posts.AsNoTracking().Include(post => post.Media).Include(post => post.Variants)
                 .AsSplitQuery().OrderByDescending(post => post.Id).ToListAsync();
             Groups = await db.Groups.AsNoTracking().Include(group => group.Category).OrderBy(group => group.Name).ToListAsync();
-            Campaigns = await db.Campaigns.AsNoTracking().Include(campaign => campaign.Targets)
+            Campaigns = await db.Campaigns.AsNoTracking().Include(campaign => campaign.Targets.Where(target => !target.IsExcluded))
                 .OrderByDescending(campaign => campaign.Id).ToListAsync();
             History = await db.Attempts.AsNoTracking().Include(attempt => attempt.Target)
                 .OrderByDescending(attempt => attempt.Id).ToListAsync();
