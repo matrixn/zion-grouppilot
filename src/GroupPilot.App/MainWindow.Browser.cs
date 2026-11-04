@@ -89,12 +89,15 @@ public sealed partial class MainWindow
             var campaign = model.Campaigns.Single(item => item.Id == share.CampaignId);
             var selectedPost = model.Posts.Single(item => item.Id == campaign.PostId);
             sharingBanner.Title = $"Sharing to {group?.Name}";
-            sharingBanner.Message = $"{selectedPost.Title} — opening the group editor. Confirm the submission in Facebook to finish.";
+            sharingBanner.Message = automaticCampaign is null
+                ? $"{selectedPost.Title} — opening the group editor. Confirm the submission in Facebook to finish."
+                : $"{selectedPost.Title} — the campaign will prepare and publish this post automatically.";
             sharingBanner.Severity = InfoBarSeverity.Informational;
         }
         browserContext!.Text = target is not null ? $"Campaign target · {group?.Name} · Submit manually, then record the outcome." :
             group is not null ? $"Group review · {group.Name}" :
             "Browse Facebook or import a post from its permalink.";
+        pageLoaded = false;
         view.CoreWebView2.Navigate(url);
     }
 
@@ -115,6 +118,7 @@ public sealed partial class MainWindow
         browserContext = Label("");
         browserAddress.Header = null;
         var navigation = new Grid { ColumnSpacing = 4 };
+        browserNavigation = navigation;
         for (var index = 0; index < 4; index++)
             navigation.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         navigation.ColumnDefinitions.Add(new ColumnDefinition());
@@ -206,6 +210,15 @@ public sealed partial class MainWindow
         prepareShareButton.Visibility = Visibility.Collapsed;
         outcomeButton = FacebookAction(sharingActions, "Record campaign outcome", RecordBrowserOutcomeAsync);
         outcomeButton.Visibility = Visibility.Collapsed;
+        stopCampaignButton = new Button { Content = "Stop campaign", HorizontalAlignment = HorizontalAlignment.Stretch,
+            Visibility = Visibility.Collapsed, MinHeight = 36 };
+        stopCampaignButton.Click += (_, _) =>
+        {
+            automaticCampaign?.Cancel();
+            stopCampaignButton.IsEnabled = false;
+            stopCampaignButton.Content = "Stopping…";
+        };
+        sharingActions.Children.Add(stopCampaignButton);
         reviewButton.IsEnabled = false;
         outcomeButton.IsEnabled = false;
         layout.Children.Add(toolbar);
@@ -232,7 +245,7 @@ public sealed partial class MainWindow
         var button = new Button { Content = title, HorizontalAlignment = HorizontalAlignment.Stretch, MinHeight = 36 };
         button.Click += async (_, _) =>
         {
-            if (browser is null || model.Busy)
+            if (browser is null || model.Busy || automaticCampaign is not null)
                 return;
             await model.RunAsync(action);
             if (browserStatus is not null && model.Status.Length > 0)

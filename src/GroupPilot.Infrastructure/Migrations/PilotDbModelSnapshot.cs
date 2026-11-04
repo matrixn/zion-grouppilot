@@ -94,6 +94,10 @@ namespace GroupPilot.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AutomationMessage")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<int?>("CampaignId")
                         .HasColumnType("INTEGER");
 
@@ -114,6 +118,10 @@ namespace GroupPilot.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .IsConcurrencyToken()
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTimeOffset?>("SubmissionStartedAt")
+                        .IsConcurrencyToken()
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -222,6 +230,13 @@ namespace GroupPilot.Infrastructure.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("CampaignGroupId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Evidence")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsAutomatic")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("PublishedUrl")

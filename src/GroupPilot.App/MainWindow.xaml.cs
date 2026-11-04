@@ -37,6 +37,7 @@ public sealed partial class MainWindow : Window
         Root.Loaded += Initialize;
         Closed += (_, _) =>
         {
+            automaticCampaign?.Cancel();
             campaignReminderTimer?.Stop();
             var view = browser;
             browser = null;
@@ -93,6 +94,8 @@ public sealed partial class MainWindow : Window
 
     private void Show(string? page)
     {
+        if (page != "Browser")
+            automaticCampaign?.Cancel();
         FacebookHost.Visibility = page == "Browser" ? Visibility.Visible : Visibility.Collapsed;
         ContentHost.Visibility = page == "Browser" ? Visibility.Collapsed : Visibility.Visible;
         switch (page)
@@ -199,7 +202,15 @@ public sealed partial class MainWindow : Window
             button.MinHeight = 36;
             button.HorizontalAlignment = HorizontalAlignment.Stretch;
         }
-        button.Click += async (_, _) => await model.RunAsync(handler, success);
+        button.Click += async (_, _) =>
+        {
+            if (automaticCampaign is not null)
+            {
+                model.SetStatus("Stop the running campaign before changing posts, groups or campaigns.");
+                return;
+            }
+            await model.RunAsync(handler, success);
+        };
         panel.Children.Add(button);
     }
 
@@ -222,7 +233,7 @@ public sealed partial class MainWindow : Window
 
     private void ShowDashboard()
     {
-        var page = Page("Dashboard", "Prepare posts, organize groups and track assisted publishing on this PC.");
+        var page = Page("Dashboard", "Import Facebook posts, organize groups and run publishing campaigns on this PC.");
         var summary = ResponsiveGrid(page, 3, 180);
         void Metric(string label, int count)
         {

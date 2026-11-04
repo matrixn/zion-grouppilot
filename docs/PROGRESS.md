@@ -1,5 +1,16 @@
 # Progres GroupPilot
 
+## 0.00.19 · Publicare automată în browser
+
+- [x] Rulare secvențială prin WebView2, fără copy/paste sau confirmare pentru fiecare grup.
+- [x] Checkpoint persistent înainte de trimitere, detectare rezultat și blocarea retrimiterii incerte.
+- [x] Progres, oprire, pauză persistentă și jurnal cu dovada confirmării.
+- [x] Build x64 fără erori sau avertismente, 45 de teste xUnit și 10 teste DOM.
+- [x] Fixture local în WebView2 real: inserare, apăsare unică, confirmare, aprobare, rezultat incert și restricție; fără cereri Facebook.
+- [x] Lansare Windows cu fereastră vizibilă, versiune 0.00.19 și datele existente încărcate.
+- [ ] Publicare într-un grup Facebook de test și verificarea variantelor interfeței live.
+
+
 ## 0.00.18 · Editare, pornire manuală și instanță unică
 
 - [x] Campanii fără dată de început și opțiune de rulare înaintea datei programate.

@@ -1,7 +1,7 @@
 namespace GroupPilot.Core;
 
 public enum PostKind { Existing, New, Remix }
-public enum TargetStatus { Pending, Published, Failed, Skipped, InProgress, AwaitingApproval }
+public enum TargetStatus { Pending, Published, Failed, Skipped, InProgress, AwaitingApproval, NeedsReview }
 public enum CampaignRecurrence { Once, Daily, EveryTwoDays, EveryThreeDays, Weekly, Monthly, TwiceMonthly, ThreeTimesMonthly, FourTimesMonthly }
 public enum GroupPostingAccess { Unreviewed, Allowed, RequiresApproval, Unavailable }
 
@@ -96,6 +96,8 @@ public sealed class CampaignGroup
     public string GroupUrl { get; set; } = "";
     public TargetStatus Status { get; set; }
     public bool IsExcluded { get; set; }
+    public DateTimeOffset? SubmissionStartedAt { get; set; }
+    public string AutomationMessage { get; set; } = "";
     public override string ToString() => $"{GroupName} · {Status}";
 }
 
@@ -108,7 +110,10 @@ public sealed class PublishingAttempt
     public int RunNumber { get; set; } = 1;
     public TargetStatus Status { get; set; }
     public string PublishedUrl { get; set; } = "";
-    public override string ToString() => $"{RecordedAt.ToLocalTime():g} · Run {RunNumber} · {Target.GroupName} · {Status} {PublishedUrl}";
+    public string Evidence { get; set; } = "";
+    public bool IsAutomatic { get; set; }
+    public override string ToString() => $"{RecordedAt.ToLocalTime():g} · Run {RunNumber} · {Target.GroupName} · {Status} {PublishedUrl}" +
+        (Evidence.Length == 0 ? "" : $" · {Evidence}");
 }
 
 public sealed class AppSettings

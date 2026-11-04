@@ -42,7 +42,7 @@ public sealed partial class MainWindow
 
     private void ShowCampaigns()
     {
-        var page = Page("Campaigns", "Run a campaign now or save it for later. Confirm each share in Facebook.");
+        var page = Page("Campaigns", "Publish an imported Facebook post automatically to your selected groups, with a pause between shares.");
         var saved = Section(page, "Saved campaigns");
         var active = model.Campaigns.Where(campaign => !campaign.IsArchived).ToArray();
         var campaignItems = active.Select(campaign =>
@@ -221,7 +221,7 @@ public sealed partial class MainWindow
         useDate.Checked += (_, _) => UpdateSchedule();
         useDate.Unchecked += (_, _) => UpdateSchedule();
         UpdateSchedule();
-        scheduling.Children.Add(Label("Keep GroupPilot open for scheduled reminders. Confirm each submission in Facebook."));
+        scheduling.Children.Add(Label("Keep GroupPilot open for scheduled reminders. Run campaign now publishes to the selected groups automatically."));
 
         // Actions remain visible while the form scrolls.
         var scroll = (ScrollViewer)ContentHost.Content;
@@ -299,9 +299,14 @@ public sealed partial class MainWindow
             ShowCampaignDetails(model.Campaigns.Single(item => item.Id == campaign.Id));
         }, "Pause saved.");
         var targets = List(campaign.Targets.OrderBy(target => target.Id));
-        targets.SelectedItem = campaign.Targets.FirstOrDefault(target => target.Status == TargetStatus.InProgress);
+        targets.SelectedItem = campaign.Targets.FirstOrDefault(target => target.Status is TargetStatus.InProgress or TargetStatus.NeedsReview);
         var targetSection = Section(page, "Publishing targets");
         targetSection.Children.Add(targets);
+        var targetMessage = Label("");
+        void ShowTargetMessage() => targetMessage.Text = (targets.SelectedItem as CampaignGroup)?.AutomationMessage ?? "Select a group to see its latest result.";
+        targets.SelectionChanged += (_, _) => ShowTargetMessage();
+        ShowTargetMessage();
+        targetSection.Children.Add(targetMessage);
         var actions = ResponsiveGrid(targetSection, 3, 180);
         CampaignGroup Selected() => targets.SelectedItem as CampaignGroup ?? throw new ArgumentException("Select a target.");
 
@@ -400,8 +405,10 @@ public sealed partial class MainWindow
         .OrderBy(target => target.Status == TargetStatus.InProgress ? 0 : target.Status == TargetStatus.Pending ? 1 : 2)
         .ThenBy(target => target.Id).FirstOrDefault();
 
-    private async Task RunCampaignNowAsync(Campaign campaign, int? excludeTarget = null)
+    private async Task RunCampaignNowAsync(Campaign campaign)
     {
+        if (automaticCampaign is not null)
+            throw new ArgumentException("A campaign is already running.");
         if (campaign.Targets.Count > 0 && campaign.Targets.All(target => target.Status is TargetStatus.Published or TargetStatus.Skipped))
         {
             if (await Dialog("Run this campaign again?", Label("This starts a new round for the selected groups now, including when the next run is scheduled for later."),
@@ -415,9 +422,14 @@ public sealed partial class MainWindow
         if (!CanSharePost(post))
             throw new ArgumentException("This campaign has no existing Facebook post to share.");
 
-        var next = NextCampaignTarget(campaign, excludeTarget)
-            ?? throw new ArgumentException("No eligible groups are ready. Check group access or record outcomes awaiting approval.");
-        await AssistAsync(campaign.Id, post, next);
+        if (campaign.Targets.Count == 0)
+            throw new ArgumentException("Select at least one group.");
+        await OpenFacebookAsync(FacebookHome, keepCurrentPage: true);
+        automaticCampaign = new CancellationTokenSource();
+        stopCampaignButton!.Content = "Stop campaign";
+        stopCampaignButton.IsEnabled = true;
+        stopCampaignButton.Visibility = Visibility.Visible;
+        _ = RunAutomaticCampaignAsync(campaign, automaticCampaign);
     }
 
     private static bool CanSharePost(Post post) => post.Kind == PostKind.Existing && Validation.IsFacebookPostUrl(post.Url);
@@ -506,8 +518,8 @@ public sealed partial class MainWindow
         ShowCampaignDetails(refreshed);
         if (refreshed.Targets.All(item => item.Status is TargetStatus.Published or TargetStatus.Skipped))
             NotifyCampaignClosed();
-        else if (result == ContentDialogResult.Secondary && NextCampaignTarget(refreshed, target.Id) is not null)
-            await RunCampaignNowAsync(refreshed, target.Id);
+        else if (result == ContentDialogResult.Secondary && NextCampaignTarget(refreshed, target.Id) is { } next)
+            await AssistAsync(refreshed.Id, model.Posts.Single(post => post.Id == refreshed.PostId), next);
     }
 
     private static void NotifyCampaignClosed()

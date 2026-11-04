@@ -1,8 +1,8 @@
 # GroupPilot
 
-**Versiune curentă** `0.00.18`
+**Versiune curentă** `0.00.19`
 
-GroupPilot este o aplicație desktop nativă pentru Windows 11. Pregătești postări, organizezi grupuri Facebook și urmărești local campaniile de distribuire. Trimiterea finală se face manual în interfața Facebook, pentru fiecare grup.
+GroupPilot este o aplicație desktop nativă pentru Windows 11. Importă postări Facebook, organizează grupurile și pornește campanii de distribuire automată în browserul integrat. Autentificarea rămâne în Facebook.
 
 ## Dezvoltare locală
 
@@ -28,7 +28,7 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [x] Grupuri cu editare, ștergere, căutare, categorii, note, reguli și stare activă. Importă CSV cu antetul `name,url` sau câte un URL pe rând. URL-urile echivalente sunt deduplicate.
 - [x] Campanii cu postare salvată, selecție de grupuri active, dată și oră de planificare, stare per grup și reluarea țintelor în așteptare sau eșuate.
 - [x] WebView2 cu profil persistent separat și navigare către postări și grupuri Facebook. Autentificarea are loc în interfața Facebook.
-- [x] Publicare asistată. Campania copiază linkul postării Facebook și deschide grupul. După trimiterea manuală în Facebook, utilizatorul înregistrează rezultatul și URL-ul publicat. Aplicația anunță campaniile scadente cât timp rămâne deschisă.
+- [x] Publicare automată prin WebView2 la pornirea explicită a campaniei: pregătirea linkului, apăsarea Publică, verificarea rezultatului și pauză între grupuri. Rezultatele neclare opresc campania și cer verificare. Publicarea asistată rămâne disponibilă separat.
 - [x] Notificare Windows pentru închiderea tuturor țintelor campaniei, unde API-ul este disponibil.
 
 - [x] Pagini de lucru aliniate la stânga, formulare grupate și coloane care se rearanjează la redimensionare. Identitatea vizuală folosește iconul F în fereastră și în resursele Windows.
@@ -38,9 +38,25 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 1. Deschide **Facebook Browser** din meniul aplicației. Alege **Continue with this session** dacă ești deja autentificat în profilul GroupPilot sau autentifică-te direct în Facebook. **Open in default browser** folosește sesiunea browserului Windows, dacă există. Pentru a importa de acolo, deschide linkul postării în fereastra GroupPilot.
 2. Deschide permalinkul unei postări și apasă **Import current post**. Verifică URL-ul, titlul și descrierea disponibilă, apoi salvează postarea în bibliotecă.
 3. În **Groups**, selectează un grup și apasă **Review in Facebook**. Verifică regulile și dreptul contului de a posta, apoi folosește **Record group review** pentru a salva observațiile și data verificării. Accesul poate varia în funcție de cont și în timp.
-4. Din campanie, alege **Prepare selected target** sau **Run campaign now**. GroupPilot copiază linkul și salvează ținta ca fiind în lucru. Lipește linkul și confirmă manual distribuirea în Facebook.
-5. Folosește **Record campaign outcome** în fereastra Facebook sau **Record selected outcome** în campanie. Selectează rezultatul observat. Pentru Published, confirmă URL-ul postării. Pentru AwaitingApproval, verifică ulterior moderarea înainte de a înregistra rezultatul final.
-6. După o întrerupere, redeschide campania. Țintele rămase în lucru au prioritate la reluare. Verifică întâi dacă postarea a fost deja trimisă, apoi înregistrează rezultatul sau continuă publicarea.
+4. Din campanie, alege **Run campaign now**. GroupPilot deschide pe rând grupurile selectate, introduce linkul și apasă **Post/Publică**. Salvează rezultatul pe baza unei confirmări vizibile Facebook sau a unei postări noi corelate cu sursa și un marcaj temporal recent. Dispariția editorului nu confirmă publicarea. **Stop campaign** oprește următoarele acțiuni. Păstrează aplicația deschisă.
+5. Rezultatele automate sunt salvate în Publishing History cu dovada observată și URL-ul publicat când Facebook îl expune. **AwaitingApproval** înseamnă trimitere spre moderare. **NeedsReview** cere verificarea Facebook și înregistrarea manuală a rezultatului prin **Record campaign outcome** sau **Record selected outcome**. Pentru Published înregistrat manual este necesar URL-ul postării.
+6. După o întrerupere, redeschide campania. Țintele InProgress și NeedsReview blochează retrimiterea automată până la verificare. Dacă postarea nu a fost trimisă, înregistrează Failed pentru a permite o reîncercare explicită; dacă există deja, înregistrează Published sau AwaitingApproval. Grupurile finalizate nu sunt repetate în aceeași rundă. **Prepare selected target** păstrează fluxul asistat pentru intervenții punctuale.
+
+Automatizarea folosește interfața Facebook, fără API privat, export de cookie-uri sau backend. Pauza este o setare de ritm, nu o garanție împotriva restricțiilor. Programările declanșează notificări; campania pornește prin Run campaign now.
+
+Pentru testele DOM locale (Node.js 20.19+):
+
+```powershell
+cd tests/FacebookPublishing.Tests
+npm ci
+npm test
+```
+
+Verificare locală în WebView2 real pe Windows, cu profil temporar și toate cererile servite din fixture, fără publicare Facebook:
+
+```powershell
+dotnet run --project tests/GroupPilot.BrowserSmoke
+```
 
 ## Ce urmează
 
@@ -49,6 +65,16 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [ ] Verifică afișarea notificării Windows și lansarea pe x86 și ARM64.
 
 ## Istoricul versiunilor
+
+### 0.00.19
+
+- [x] Run campaign now rulează automat grupurile selectate, inclusiv inserarea linkului și apăsarea Publică; nu este necesar copy/paste.
+- [x] Oprire accesibilă în browser, progres per grup, pauză persistentă și rezultate Published / AwaitingApproval / NeedsReview.
+- [x] Marcaj SQLite salvat înainte de trimitere, apăsare unică per document și blocarea retrimiterii pentru rezultate incerte după oprire sau restart.
+- [x] Oprire la autentificare, restricții, pagină schimbată, editor ocupat sau controale ambigue. Nu se ocolesc verificările Facebook.
+- [x] Jurnal cu tipul automat/manual, dovada observată și permalink când este disponibil. Confirmarea explicită fără permalink se păstrează cu URL gol.
+- [x] 45 de teste xUnit și 10 teste DOM; fixture local verificat și în WebView2 real.
+- [ ] Verificare completă într-un grup Facebook de test: publicare reală, moderare și variantele interfeței Facebook. Automatizarea depinde de DOM și de limba EN/RO; se oprește dacă nu recunoaște interfața.
 
 ### 0.00.18
 
@@ -157,4 +183,4 @@ Soluția include `GroupPilot.App` pentru UI-ul WinUI 3, `GroupPilot.Core` pentru
 - [x] Documentate fundația WinUI 3 inițială, pașii de build și lansare și etapele MVP.
 - [x] Stabilită versiunea de bază `0.00.01`.
 
-La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.18` corespunde metadatelor .NET `0.0.18` și MSIX `0.0.18.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.
+La fiecare modificare, incrementează ultima componentă a versiunii, sincronizează metadatele .NET și MSIX, adaugă aici ce s-a schimbat și actualizează bifele unde este cazul. Versiunea `0.00.19` corespunde metadatelor .NET `0.0.19` și MSIX `0.0.19.0`. Validează modificarea, apoi fă commit și push pe ramura proiectului.

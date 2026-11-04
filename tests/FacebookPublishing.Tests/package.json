@@ -1,0 +1,6 @@
+{
+  "name": "grouppilot-publishing-dom-tests",
+  "private": true,
+  "scripts": { "test": "node --test publishing.test.cjs" },
+  "devDependencies": { "jsdom": "27.0.1" }
+}

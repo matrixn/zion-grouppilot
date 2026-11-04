@@ -387,7 +387,11 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
             if (!runNow && (campaign.NextRunAt is null || campaign.NextRunAt > clock.GetUtcNow()))
                 throw new ArgumentException($"The next run is scheduled for {campaign.NextRunAt?.ToLocalTime():g}.");
             foreach (var target in targets)
+            {
                 target.Status = TargetStatus.Pending;
+                target.SubmissionStartedAt = null;
+                target.AutomationMessage = "";
+            }
             campaign.RunNumber++;
             campaign.NextRunAt = null;
         }
@@ -426,7 +430,8 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         if (expectedRunNumber is { } expected && campaign.RunNumber != expected)
             throw new ArgumentException("This campaign has started a new run. Reload before preparing or recording a share.");
         var target = await db.Targets.FindAsync(targetId) ?? throw new ArgumentException("Target unavailable.");
-        if (target.Status is TargetStatus.Published or TargetStatus.Skipped or TargetStatus.AwaitingApproval)
+        if (target.Status is TargetStatus.Published or TargetStatus.Skipped or TargetStatus.AwaitingApproval or TargetStatus.NeedsReview
+            || target.SubmissionStartedAt is not null)
             throw new ArgumentException("This target is closed or awaiting approval.");
         var group = await db.Groups.FindAsync(target.SocialGroupId);
         if (group is null || !group.Enabled || group.Url != target.GroupUrl || group.PostingAccess == GroupPostingAccess.Unavailable)
@@ -444,10 +449,53 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         await transaction.CommitAsync();
     }
 
-    public async Task RecordAttemptAsync(int targetId, TargetStatus status, string publishedUrl, int? expectedRunNumber = null)
+    public async Task MarkAutomaticSubmissionAsync(int targetId, int expectedRunNumber)
     {
-        if (status is not (TargetStatus.Published or TargetStatus.Failed or TargetStatus.Skipped or TargetStatus.AwaitingApproval)
-            || (status == TargetStatus.Published && !Validation.IsFacebookPostUrl(publishedUrl)))
+        await using var db = await factory.CreateDbContextAsync();
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        var campaign = await db.Campaigns.SingleOrDefaultAsync(item => !item.IsArchived && item.RunNumber == expectedRunNumber
+            && item.Targets.Any(target => target.Id == targetId && !target.IsExcluded))
+            ?? throw new ArgumentException("The campaign changed before submission.");
+        var target = await db.Targets.SingleAsync(item => item.Id == targetId);
+        var group = await db.Groups.FindAsync(target.SocialGroupId);
+        if (target.Status != TargetStatus.InProgress || target.SubmissionStartedAt is not null
+            || group is null || !group.Enabled || group.Url != target.GroupUrl || group.PostingAccess == GroupPostingAccess.Unavailable)
+            throw new ArgumentException("The target cannot be submitted. Check its current state and group access.");
+        target.SubmissionStartedAt = clock.GetUtcNow();
+        target.AutomationMessage = "Submission started. If interrupted, check Facebook before retrying.";
+        // Reserve pacing even if the process exits before the result can be recorded.
+        var settings = await db.Settings.FindAsync(1);
+        if (settings is null)
+        {
+            settings = new AppSettings { Id = 1 };
+            db.Settings.Add(settings);
+        }
+        var next = clock.GetUtcNow().AddSeconds(campaign.PauseSeconds);
+        if (settings.NextShareAt is null || settings.NextShareAt < next)
+            settings.NextShareAt = next;
+        settings.LastShareGroupUrl = target.GroupUrl;
+        await db.SaveChangesAsync();
+        await transaction.CommitAsync();
+    }
+
+    public Task RecordAutomaticOutcomeAsync(int targetId, int runNumber, PublicationResult result)
+    {
+        if (result.Status is not (TargetStatus.Published or TargetStatus.AwaitingApproval or TargetStatus.Failed or TargetStatus.NeedsReview)
+            || string.IsNullOrWhiteSpace(result.Evidence) || result.Evidence.Length > 1000)
+            throw new ArgumentException("An automatic result needs a supported outcome and confirmation evidence.");
+        return RecordAttemptCoreAsync(targetId, result.Status, result.PublishedUrl, runNumber, result.Evidence);
+    }
+
+    public Task RecordAttemptAsync(int targetId, TargetStatus status, string publishedUrl, int? expectedRunNumber = null) =>
+        RecordAttemptCoreAsync(targetId, status, publishedUrl, expectedRunNumber);
+
+    private async Task RecordAttemptCoreAsync(int targetId, TargetStatus status, string publishedUrl,
+        int? expectedRunNumber, string? evidence = null)
+    {
+        var automatic = evidence is not null;
+        if (status is not (TargetStatus.Published or TargetStatus.Failed or TargetStatus.Skipped or TargetStatus.AwaitingApproval or TargetStatus.NeedsReview)
+            || (!automatic && status == TargetStatus.NeedsReview)
+            || (status == TargetStatus.Published && !(automatic && publishedUrl.Length == 0) && !Validation.IsFacebookPostUrl(publishedUrl)))
             throw new ArgumentException("Choose an outcome and enter the Facebook post URL for a successful publication.");
 
         await using var db = await factory.CreateDbContextAsync();
@@ -460,6 +508,12 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
         var target = await db.Targets.FindAsync(targetId) ?? throw new InvalidOperationException("Target unavailable.");
         if (target.Status is TargetStatus.Published or TargetStatus.Skipped)
             throw new InvalidOperationException("This target is already closed.");
+        if (automatic && (target.Status != TargetStatus.InProgress
+            || (status != TargetStatus.Failed && target.SubmissionStartedAt is null)
+            || (status == TargetStatus.Failed && target.SubmissionStartedAt is not null)))
+            throw new InvalidOperationException("The automatic result does not match the durable submission checkpoint.");
+        if (automatic && publishedUrl.Length > 0 && !Validation.IsSameFacebookGroup(target.GroupUrl, publishedUrl))
+            throw new ArgumentException("The result URL must belong to the selected group.");
 
         var now = clock.GetUtcNow();
         if (status is TargetStatus.Published or TargetStatus.AwaitingApproval or TargetStatus.Failed)
@@ -476,10 +530,14 @@ public sealed class Storage(IDbContextFactory<PilotDb> factory, TimeProvider? ti
             settings.LastShareGroupUrl = target.GroupUrl;
         }
         target.Status = status;
+        target.AutomationMessage = evidence ?? "Outcome reviewed and recorded manually.";
+        if (!automatic)
+            target.SubmissionStartedAt = null;
         db.Attempts.Add(new PublishingAttempt
         {
             CampaignGroupId = targetId, Status = status, RecordedAt = now, RunNumber = campaign.RunNumber,
-            PublishedUrl = status == TargetStatus.Published ? publishedUrl : ""
+            PublishedUrl = status == TargetStatus.Published ? publishedUrl : "",
+            Evidence = evidence ?? "", IsAutomatic = automatic
         });
         await db.Entry(campaign).Collection(item => item.Targets).LoadAsync();
         if (campaign.Targets.Where(item => !item.IsExcluded).All(item => item.Status is TargetStatus.Published or TargetStatus.Skipped))

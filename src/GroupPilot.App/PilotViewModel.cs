@@ -17,6 +17,8 @@ public sealed partial class PilotViewModel(Storage storage) : ObservableObject
     public List<PublishingAttempt> History { get; private set; } = [];
     public string Theme { get; private set; } = "Default";
 
+    public void SetStatus(string message) => Status = message;
+
     public async Task ReloadAsync()
     {
         await storage.QueryAsync(async db =>

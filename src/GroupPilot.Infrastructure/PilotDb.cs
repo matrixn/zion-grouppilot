@@ -26,5 +26,6 @@ public sealed class PilotDb(DbContextOptions<PilotDb> options) : DbContext(optio
         model.Entity<CampaignGroup>().HasOne<SocialGroup>().WithMany()
             .HasForeignKey(target => target.SocialGroupId).OnDelete(DeleteBehavior.SetNull);
         model.Entity<CampaignGroup>().Property(target => target.Status).IsConcurrencyToken();
+        model.Entity<CampaignGroup>().Property(target => target.SubmissionStartedAt).IsConcurrencyToken();
     }
 }
